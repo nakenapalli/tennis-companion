@@ -1,0 +1,3 @@
+# Legacy registration (Boot 3); Boot 4 uses the .imports file alongside this. Harmless either way.
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.tenniscompanion.config.DotenvEnvironmentPostProcessor

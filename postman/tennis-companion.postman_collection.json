@@ -1,0 +1,206 @@
+{
+  "info": {
+    "_postman_id": "b1f2c3d4-0001-4a2b-8c3d-tenniscompanion",
+    "name": "Tennis Companion",
+    "description": "Phase 0-2 endpoints. Set the `baseUrl` collection variable to your running port. Player ids: ATP = raw Sackmann id; WTA = raw id + 1,000,000,000.\n\nThe live/rankings READ endpoints serve from cache (no upstream calls). The /api/admin/poll/* endpoints DO hit the upstream API — the free tier is ~50 req/day, so use them sparingly. Run a poll once, then the read endpoints return cached data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{token}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "Auth (Phase 4)",
+      "description": "Register or log in — the token is saved to {{token}} and auto-attached to every request (collection-level bearer auth). To use /api/admin/**, log in as an admin (set ADMIN_EMAIL/ADMIN_PASSWORD in .env first).",
+      "item": [
+        {
+          "name": "Register",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"fan@example.com\",\n  \"password\": \"password123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] } }
+        },
+        {
+          "name": "Login",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"fan@example.com\",\n  \"password\": \"password123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } }
+        },
+        {
+          "name": "Login as admin",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@local\",\n  \"password\": \"adminpass123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } }
+        }
+      ]
+    },
+    {
+      "name": "Me — personalization (Phase 4, needs login)",
+      "item": [
+        {
+          "name": "Home config (GET)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
+        },
+        {
+          "name": "Home config (PUT)",
+          "request": { "method": "PUT", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"widgets\": [\"live-matches\", \"rankings-atp\", \"favorites\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
+        },
+        {
+          "name": "Favorites (GET)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
+        },
+        {
+          "name": "Add favorite (Alcaraz 207989)",
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"playerId\": 207989\n}" }, "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
+        },
+        {
+          "name": "Remove favorite (207989)",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites/207989", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites", "207989"] } }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "API health",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('status UP', () => pm.expect(pm.response.json().status).to.eql('UP'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] } }
+        },
+        {
+          "name": "Actuator health (db + redis)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] } }
+        }
+      ]
+    },
+    {
+      "name": "Players — profile",
+      "item": [
+        {
+          "name": "Sinner (ATP #1) — 206173",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('has lastName', () => pm.expect(pm.response.json()).to.have.property('lastName'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/206173", "host": ["{{baseUrl}}"], "path": ["api", "players", "206173"] } }
+        },
+        {
+          "name": "Alcaraz (ATP #2) — 207989",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989"] } }
+        },
+        {
+          "name": "Sabalenka (WTA #1, namespaced) — 1000214544",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('tour is WTA', () => pm.expect(pm.response.json().tour).to.eql('WTA'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/1000214544", "host": ["{{baseUrl}}"], "path": ["api", "players", "1000214544"] } }
+        }
+      ]
+    },
+    {
+      "name": "Players — matches & h2h",
+      "item": [
+        {
+          "name": "Alcaraz recent (limit=5)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('<= 5 rows', () => pm.expect(pm.response.json().length).to.be.at.most(5));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989/matches?limit=5", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989", "matches"], "query": [ { "key": "limit", "value": "5" } ] } }
+        },
+        {
+          "name": "Alcaraz vs Sinner (h2h)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const b = pm.response.json();", "pm.test('totals add up', () => pm.expect(b.playerWins + b.opponentWins).to.eql(b.matches.length));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989/h2h?opponentId=206173", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989", "h2h"], "query": [ { "key": "opponentId", "value": "206173" } ] } }
+        }
+      ]
+    },
+    {
+      "name": "Live scores (Phase 2)",
+      "item": [
+        {
+          "name": "Live matches (cached)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// empty until you POST /api/admin/poll/live at least once" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/live", "host": ["{{baseUrl}}"], "path": ["api", "scores", "live"] } }
+        },
+        {
+          "name": "Recent finished matches (days=1)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/recent?days=1", "host": ["{{baseUrl}}"], "path": ["api", "scores", "recent"], "query": [ { "key": "days", "value": "1" } ] } }
+        }
+      ]
+    },
+    {
+      "name": "Rankings (Phase 2)",
+      "item": [
+        {
+          "name": "ATP rankings (limit=20)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// rows include playerId (canonical Sackmann id) once reconciled" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/rankings?tour=ATP&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "rankings"], "query": [ { "key": "tour", "value": "ATP" }, { "key": "limit", "value": "20" } ] } }
+        },
+        {
+          "name": "WTA rankings (limit=20)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/rankings?tour=WTA&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "rankings"], "query": [ { "key": "tour", "value": "WTA" }, { "key": "limit", "value": "20" } ] } }
+        }
+      ]
+    },
+    {
+      "name": "Admin — polling & reconciliation (Phase 2)",
+      "description": "The two poll endpoints call the upstream API (spends free-tier quota). Run a poll, then read the live/rankings endpoints above.",
+      "item": [
+        {
+          "name": "Poll live matches  (⚠ upstream call)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports count', () => pm.expect(pm.response.json()).to.have.property('polledMatches'));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/live", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "live"] } }
+        },
+        {
+          "name": "Poll rankings ATP+WTA  (⚠ 2 upstream calls, slow first run)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports counts', () => pm.expect(pm.response.json()).to.have.property('polledRankings'));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/rankings", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "rankings"] } }
+        },
+        {
+          "name": "Sync tournaments  (⚠ upstream call)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports count', () => pm.expect(pm.response.json()).to.have.property('syncedTournaments'));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/tournaments", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "tournaments"] } }
+        },
+        {
+          "name": "Reconciliation review queue",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities"], "query": [ { "key": "limit", "value": "100" } ] } }
+        },
+        {
+          "name": "Confirm a mapping (manual)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "// EDIT the body first: externalPlayerId from the review queue, playerId = the correct Sackmann id" ] } } ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"source\": \"tennisapi\",\n  \"externalPlayerId\": \"REPLACE_WITH_EXTERNAL_ID\",\n  \"playerId\": 0\n}" },
+            "url": { "raw": "{{baseUrl}}/api/admin/entity-map", "host": ["{{baseUrl}}"], "path": ["api", "admin", "entity-map"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tournaments (Phase 3)",
+      "description": "Run 'Sync tournaments' (admin) once first; these then serve from cache. Only currently-live tournaments appear.",
+      "item": [
+        {
+          "name": "Current tournaments",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/current", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "current"] } }
+        },
+        {
+          "name": "Tournament by id (id=1)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));", "// swap the id for one returned by /current" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/1", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "1"] } }
+        }
+      ]
+    },
+    {
+      "name": "Edge cases",
+      "item": [
+        {
+          "name": "Unknown player -> 404",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('404', () => pm.response.to.have.status(404));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/999999999", "host": ["{{baseUrl}}"], "path": ["api", "players", "999999999"] } }
+        }
+      ]
+    }
+  ]
+}

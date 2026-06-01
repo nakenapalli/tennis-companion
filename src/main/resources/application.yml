@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: tennis-companion
+
+  # Postgres. Defaults match docker-compose; override via env in any other environment.
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/tennis}
+    username: ${DATABASE_USER:tennis}
+    password: ${DATABASE_PASSWORD:tennis}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate        # Flyway owns the schema; Hibernate only validates against it
+    open-in-view: false         # don't hold a DB session open for the whole request
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  # Redis. Spring Boot accepts a single url; defaults match docker-compose.
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+
+  # The upstream feed sends large payloads; only bind the fields we model.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+
+# Actuator: expose health (with component detail) so /actuator/health reports db + redis status.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# One-time historical (Sackmann) load. Off by default; enable to ingest on startup:
+#   .\gradlew.bat bootRun --args='--app.historical-load.enabled=true'
+app:
+  historical-load:
+    enabled: ${HISTORICAL_LOAD_ENABLED:false}
+    atp-dir: ${SACKMANN_ATP_DIR:data/tennis_atp}
+    wta-dir: ${SACKMANN_WTA_DIR:data/tennis_wta}
+    # seasons + ranking-files use the defaults in HistoricalLoadProperties
+
+  # Upstream live feed (RapidAPI "TennisApi"); key comes from .env via spring-dotenv.
+  tennis-api:
+    base-url: ${TENNIS_API_BASE_URL:https://tennisapi1.p.rapidapi.com}
+    key: ${TENNIS_API_KEY:}
+    host: ${TENNIS_API_HOST:tennisapi1.p.rapidapi.com}
+
+  # Scheduled polling off by default (free tier ~50 req/day → poll via /api/admin/poll/* on demand).
+  poll:
+    enabled: ${POLL_ENABLED:false}
+    ranking-top-n: ${POLL_RANKING_TOP_N:100}
+
+  # Auth. The default secret is dev-only (HS256 needs >= 32 bytes) — set JWT_SECRET in prod.
+  jwt:
+    secret: ${JWT_SECRET:dev-only-change-me-please-a-32plus-byte-secret!!}
+
+  # Optional admin bootstrap (set both to auto-create an admin for the gated /api/admin/** endpoints).
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
