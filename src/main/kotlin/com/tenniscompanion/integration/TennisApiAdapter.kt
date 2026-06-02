@@ -14,4 +14,7 @@ interface TennisApiAdapter {
     fun fetchRankings(tour: String): List<NormalizedRanking>
 
     fun fetchCurrentTournaments(): List<NormalizedTournament>
+
+    /** Today's completed matches, for the "completed today" view when nothing is live. Default: none. */
+    fun fetchRecentMatches(): List<NormalizedMatch> = emptyList()
 }

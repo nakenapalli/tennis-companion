@@ -26,9 +26,10 @@ export function Nav() {
           ))}
         </div>
         <div className="nav-auth">
+          <Link href="/settings" className={path === "/settings" ? "active" : ""}>Settings</Link>
           {token ? (
             <>
-              <Link href="/settings">{email}</Link>
+              <span className="muted">{email}</span>
               <button onClick={logout} className="btn-link">Log out</button>
             </>
           ) : (

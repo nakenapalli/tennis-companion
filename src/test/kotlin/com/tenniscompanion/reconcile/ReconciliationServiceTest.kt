@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.TestPropertySource
 
 @Import(TestcontainersConfiguration::class)
 @SpringBootTest
+@TestPropertySource(properties = ["app.poll.enabled=false"]) // don't hit the live feed during tests
 class ReconciliationServiceTest(
     @Autowired val service: ReconciliationService,
     @Autowired val jdbc: JdbcTemplate,

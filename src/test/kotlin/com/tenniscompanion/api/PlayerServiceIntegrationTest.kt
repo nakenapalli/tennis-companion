@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.TestPropertySource
 import java.time.LocalDate
 
 /**
@@ -17,6 +18,7 @@ import java.time.LocalDate
  */
 @Import(TestcontainersConfiguration::class)
 @SpringBootTest
+@TestPropertySource(properties = ["app.poll.enabled=false"]) // don't hit the live feed during tests
 class PlayerServiceIntegrationTest(
     @org.springframework.beans.factory.annotation.Autowired val service: PlayerService,
     @org.springframework.beans.factory.annotation.Autowired val jdbc: JdbcTemplate,

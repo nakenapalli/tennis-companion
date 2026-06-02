@@ -11,9 +11,41 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True if the JWT is structurally unusable or past its `exp`. We decode (not verify — that's the
+ * server's job) only to avoid attaching a token we already know the server will reject with 401.
+ * A malformed token counts as expired so we discard it rather than send garbage.
+ */
+export function isJwtExpired(jwt: string): boolean {
+  try {
+    const payload = jwt.split(".")[1];
+    if (!payload) return true;
+    const { exp } = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    if (typeof exp !== "number") return false; // no exp claim -> treat as non-expiring
+    return exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+/** Drop stored auth and notify the app (AuthProvider listens) so React state falls back to anonymous. */
+export function clearAuth(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("token");
+  localStorage.removeItem("email");
+  localStorage.removeItem("admin");
+  window.dispatchEvent(new Event("auth:expired"));
+}
+
 function token(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("token");
+  const t = localStorage.getItem("token");
+  if (t && isJwtExpired(t)) {
+    // Never attach a known-expired token: it would turn public 200s into 401s. Self-heal instead.
+    clearAuth();
+    return null;
+  }
+  return t;
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -27,6 +59,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     },
   });
   if (!res.ok) {
+    // A 401 on a request we authenticated means the token is stale/revoked server-side: drop it so
+    // subsequent (incl. public) requests retry anonymously and succeed, instead of failing forever.
+    if (res.status === 401 && t) clearAuth();
     throw new ApiError(res.status, await res.text().catch(() => res.statusText));
   }
   if (res.status === 204) return undefined as T;

@@ -1,11 +1,16 @@
 package com.tenniscompanion.api
 
+import com.tenniscompanion.insight.DigestStore
+import com.tenniscompanion.insight.StoredInsight
+import com.tenniscompanion.insight.WeeklyDigestJob
 import com.tenniscompanion.poller.LiveScorePoller
 import com.tenniscompanion.poller.RankingsPoller
+import com.tenniscompanion.poller.RecentScoresJob
 import com.tenniscompanion.poller.TournamentSyncJob
 import com.tenniscompanion.reconcile.EntityMapStore
 import com.tenniscompanion.reconcile.UnmappedEntity
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -25,6 +30,9 @@ class AdminController(
     private val liveScorePoller: LiveScorePoller,
     private val rankingsPoller: RankingsPoller,
     private val tournamentSyncJob: TournamentSyncJob,
+    private val recentScoresJob: RecentScoresJob,
+    private val weeklyDigestJob: WeeklyDigestJob,
+    private val digestStore: DigestStore,
 ) {
 
     @GetMapping("/unmapped-entities")
@@ -45,4 +53,20 @@ class AdminController(
 
     @PostMapping("/poll/tournaments")
     fun pollTournaments(): Map<String, Any> = mapOf("syncedTournaments" to tournamentSyncJob.sync())
+
+    @PostMapping("/poll/recent")
+    fun pollRecent(): Map<String, Any> = mapOf("polledRecent" to recentScoresJob.sync())
+
+    // --- AI weekly digest (generate as DRAFT, review, publish) ---
+
+    @PostMapping("/insights/generate")
+    fun generateDigest(): Map<String, Any?> = mapOf("draftId" to weeklyDigestJob.generate())
+
+    @GetMapping("/insights")
+    fun insights(@RequestParam(defaultValue = "DRAFT") status: String): List<StoredInsight> =
+        digestStore.listByStatus(status.uppercase())
+
+    @PostMapping("/insights/{id}/publish")
+    fun publishInsight(@PathVariable id: Long): Map<String, Any> =
+        mapOf("id" to id, "published" to digestStore.publish(id))
 }

@@ -4,12 +4,11 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { MatchCard } from "@/components/MatchCard";
-import type { Favorite, LiveMatch, RankingRow } from "@/lib/types";
+import { ScoresFeed } from "@/components/ScoresFeed";
+import type { Favorite, RankingRow } from "@/lib/types";
 
 export default function HomePage() {
   const { token } = useAuth();
-  const live = useSWR<LiveMatch[]>("/api/scores/live", fetcher, { refreshInterval: 30000 });
   const atp = useSWR<RankingRow[]>("/api/rankings?tour=ATP&limit=5", fetcher);
   const favs = useSWR<Favorite[]>(token ? "/api/me/favorites" : null, fetcher);
 
@@ -32,19 +31,7 @@ export default function HomePage() {
         </>
       )}
 
-      <div className="row-between">
-        <h2>Live now</h2>
-        <Link href="/scores" className="player-link">All scores →</Link>
-      </div>
-      {live.data && live.data.length > 0 ? (
-        <div className="grid">
-          {live.data.slice(0, 4).map((m) => (
-            <MatchCard key={m.externalId} m={m} />
-          ))}
-        </div>
-      ) : (
-        <div className="empty">No live matches right now.</div>
-      )}
+      <ScoresFeed limit={4} moreHref="/scores" />
 
       <div className="row-between">
         <h2>ATP top 5</h2>

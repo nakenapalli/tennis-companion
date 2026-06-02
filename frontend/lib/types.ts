@@ -46,6 +46,7 @@ export interface LiveMatch {
   round?: string;
   surface?: string;
   tour?: string;
+  category?: string; // ATP | WTA | Challenger | ITF | Junior | ...
   player1: PlayerSide;
   player2: PlayerSide;
   score?: { home?: SideScore; away?: SideScore } | null;

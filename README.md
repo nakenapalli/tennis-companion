@@ -7,9 +7,11 @@ rankings, player/tournament detail backed by free historical data, and one AI-ge
 Backend: **Kotlin + Spring Boot 4.0** (JVM 21), Postgres 16, Redis 7, Flyway. Frontend:
 **Next.js 16** (App Router, TypeScript, SWR). See the design docs for the full spec.
 
-> **Status:** Phases 0–5 complete — historical foundation (Sackmann loader + player/H2H),
+> **Status:** Phases 0–6a complete — historical foundation (Sackmann loader + player/H2H),
 > live scores & rankings (poll + reconcile + Redis fan-out), tournaments, users/auth (JWT),
-> and the Next.js frontend. Next: Phase 6 (AI weekly digest + reconciliation Tier 3).
+> the Next.js frontend, and the **weekly AI "What's Worth Watching" digest** (offline batch,
+> grounded in DB facts, DRAFT → manual publish — Anthropic Claude via `LLM_API_KEY`/`ANTHROPIC_API_KEY`).
+> Next: Phase 6b (reconciliation Tier 3 + a frontend digest page), then Phase 7 (polish).
 
 ## Prerequisites
 - **JDK 21** (Temurin). This repo uses the Gradle wrapper (`./gradlew`), which respects `JAVA_HOME`.

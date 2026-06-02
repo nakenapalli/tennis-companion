@@ -78,7 +78,7 @@ class SecurityConfig(
                 it.requestMatchers("/api/auth/**", "/api/health", "/actuator/health").permitAll()
                     .requestMatchers(
                         HttpMethod.GET,
-                        "/api/players/**", "/api/scores/**", "/api/rankings", "/api/tournaments/**",
+                        "/api/players/**", "/api/scores/**", "/api/rankings", "/api/tournaments/**", "/api/insights/**",
                     ).permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .requestMatchers("/api/me/**").authenticated()

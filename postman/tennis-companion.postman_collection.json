@@ -2,12 +2,13 @@
   "info": {
     "_postman_id": "b1f2c3d4-0001-4a2b-8c3d-tenniscompanion",
     "name": "Tennis Companion",
-    "description": "Phase 0-2 endpoints. Set the `baseUrl` collection variable to your running port. Player ids: ATP = raw Sackmann id; WTA = raw id + 1,000,000,000.\n\nThe live/rankings READ endpoints serve from cache (no upstream calls). The /api/admin/poll/* endpoints DO hit the upstream API — the free tier is ~50 req/day, so use them sparingly. Run a poll once, then the read endpoints return cached data.",
+    "description": "Phases 0-6a. Set the `baseUrl` collection variable to your running port. Player ids: ATP = raw Sackmann id; WTA = raw id + 1,000,000,000.\n\nThe scores/rankings/tournaments READ endpoints serve from cache (no upstream calls). The /api/admin/poll/* endpoints hit the upstream feed (API Tennis, ~8,000 req/day on Starter) — scheduled polling is on by default, so you usually don't need them. The weekly AI digest (Insights folder) calls Anthropic and stores a DRAFT you publish manually.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
-    { "key": "token", "value": "" }
+    { "key": "token", "value": "" },
+    { "key": "insightId", "value": "" }
   ],
   "auth": {
     "type": "bearer",
@@ -119,9 +120,9 @@
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/live", "host": ["{{baseUrl}}"], "path": ["api", "scores", "live"] } }
         },
         {
-          "name": "Recent finished matches (days=1)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/recent?days=1", "host": ["{{baseUrl}}"], "path": ["api", "scores", "recent"], "query": [ { "key": "days", "value": "1" } ] } }
+          "name": "Recently completed matches",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// today's + yesterday's finished matches, most-recent first (no params)" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/recent", "host": ["{{baseUrl}}"], "path": ["api", "scores", "recent"] } }
         }
       ]
     },
@@ -141,8 +142,8 @@
       ]
     },
     {
-      "name": "Admin — polling & reconciliation (Phase 2)",
-      "description": "The two poll endpoints call the upstream API (spends free-tier quota). Run a poll, then read the live/rankings endpoints above.",
+      "name": "Admin — polling & reconciliation (needs admin login)",
+      "description": "The poll endpoints call the upstream feed (API Tennis). Scheduled polling is on by default, so these are mostly for on-demand refreshes. All /api/admin/** require an admin token — run 'Login as admin' first.",
       "item": [
         {
           "name": "Poll live matches  (⚠ upstream call)",
@@ -160,6 +161,11 @@
           "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/tournaments", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "tournaments"] } }
         },
         {
+          "name": "Poll recent (completed today)  (⚠ upstream call)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports count', () => pm.expect(pm.response.json()).to.have.property('polledRecent'));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/recent", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "recent"] } }
+        },
+        {
           "name": "Reconciliation review queue",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities"], "query": [ { "key": "limit", "value": "100" } ] } }
@@ -170,7 +176,7 @@
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
-            "body": { "mode": "raw", "raw": "{\n  \"source\": \"tennisapi\",\n  \"externalPlayerId\": \"REPLACE_WITH_EXTERNAL_ID\",\n  \"playerId\": 0\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"source\": \"api-tennis\",\n  \"externalPlayerId\": \"REPLACE_WITH_EXTERNAL_ID\",\n  \"playerId\": 0\n}" },
             "url": { "raw": "{{baseUrl}}/api/admin/entity-map", "host": ["{{baseUrl}}"], "path": ["api", "admin", "entity-map"] }
           }
         }
@@ -189,6 +195,37 @@
           "name": "Tournament by id (id=1)",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));", "// swap the id for one returned by /current" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/1", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "1"] } }
+        }
+      ]
+    },
+    {
+      "name": "Insights — weekly AI digest (Phase 6a)",
+      "description": "Admin generates a DRAFT (calls Anthropic, grounded in DB facts), reviews it, then publishes. The public endpoints serve only PUBLISHED insights. Generation needs current data — run the rankings/recent/tournaments polls first if the DB is empty. 'Generate' saves the new id to {{insightId}} for the publish/by-id requests.",
+      "item": [
+        {
+          "name": "Generate digest (admin, ⚠ calls Anthropic)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const id = pm.response.json().draftId;", "if (id) { pm.collectionVariables.set('insightId', id); }", "pm.test('returned a draftId (null = skipped: no data to ground on)', () => pm.expect(pm.response.json()).to.have.property('draftId'));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/insights/generate", "host": ["{{baseUrl}}"], "path": ["api", "admin", "insights", "generate"] } }
+        },
+        {
+          "name": "List drafts (admin)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/insights?status=DRAFT", "host": ["{{baseUrl}}"], "path": ["api", "admin", "insights"], "query": [ { "key": "status", "value": "DRAFT" } ] } }
+        },
+        {
+          "name": "Publish insight (admin, uses {{insightId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('published', () => pm.expect(pm.response.json().published).to.eql(true));" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/insights/{{insightId}}/publish", "host": ["{{baseUrl}}"], "path": ["api", "admin", "insights", "{{insightId}}", "publish"] } }
+        },
+        {
+          "name": "Latest published digest (public)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 204', () => pm.expect([200,204]).to.include(pm.response.code));", "// 204 = nothing published yet" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/insights/latest?type=weekly_digest", "host": ["{{baseUrl}}"], "path": ["api", "insights", "latest"], "query": [ { "key": "type", "value": "weekly_digest" } ] } }
+        },
+        {
+          "name": "Insight by id (public, uses {{insightId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));", "// 404 until that id is PUBLISHED" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/insights/{{insightId}}", "host": ["{{baseUrl}}"], "path": ["api", "insights", "{{insightId}}"] } }
         }
       ]
     },

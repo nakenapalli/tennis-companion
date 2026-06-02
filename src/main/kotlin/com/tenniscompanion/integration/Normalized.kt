@@ -25,6 +25,7 @@ data class NormalizedMatch(
     val round: String? = null,
     val surface: String? = null,
     val tour: String? = null,
+    val category: String? = null, // circuit: ATP | WTA | Challenger | ITF | ... (for main-tour filtering)
     val player1: NormalizedPlayerRef,
     val player2: NormalizedPlayerRef,
     val score: Map<String, Any?>? = null,

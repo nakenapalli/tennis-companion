@@ -7,8 +7,10 @@ import org.springframework.core.env.MapPropertySource
 import java.io.File
 
 /**
- * Loads a project-root `.env` into the Spring environment (low precedence, so real env vars /
- * system properties still win). Replaces the spring-dotenv library, which registers via the old
+ * Loads a project-root `.env` into the Spring environment. Inserted just **above** `systemEnvironment`
+ * so `.env` values reliably resolve (a bare/empty OS env var of the same name won't shadow them) while
+ * command-line args + system properties still override — that's how the `--app.tennis-api.base-url`
+ * test override keeps working. Replaces the spring-dotenv library, which registers via the old
  * `spring.factories` and is therefore not picked up by Spring Boot 4 (which uses an `.imports` file
  * — see META-INF/spring/...EnvironmentPostProcessor.imports).
  *
@@ -32,7 +34,14 @@ class DotenvEnvironmentPostProcessor : EnvironmentPostProcessor {
             val value = line.substring(eq + 1).split(" #", limit = 2)[0].trim().trim('"', '\'')
             if (value.isNotEmpty()) values[key] = value
         }
-        if (values.isNotEmpty()) environment.propertySources.addLast(MapPropertySource(SOURCE_NAME, values))
+        if (values.isEmpty()) return
+        val source = MapPropertySource(SOURCE_NAME, values)
+        // Above systemEnvironment (so empty/absent OS vars don't shadow .env), below command-line args.
+        if (environment.propertySources.contains("systemEnvironment")) {
+            environment.propertySources.addBefore("systemEnvironment", source)
+        } else {
+            environment.propertySources.addFirst(source)
+        }
     }
 
     companion object {

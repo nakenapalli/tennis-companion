@@ -5,6 +5,8 @@ import com.tenniscompanion.integration.NormalizedTournament
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
@@ -12,13 +14,26 @@ import java.time.Duration
 @Repository
 class TournamentStore(
     private val jdbc: JdbcTemplate,
+    private val namedJdbc: NamedParameterJdbcTemplate,
     private val redis: StringRedisTemplate,
     private val mapper: ObjectMapper,
 ) {
     private val cacheTtl = Duration.ofHours(24)
 
-    /** Upsert the synced tournaments, then refresh the `tournaments:current` cache from the DB. */
+    /**
+     * Replace this source's tournaments with the freshly synced set (delete rows no longer present —
+     * e.g. ended events or old per-draw keys now collapsed by name), upsert, then refresh the cache.
+     */
     fun upsert(source: String, tournaments: List<NormalizedTournament>) {
+        val ids = tournaments.map { it.externalId }
+        if (ids.isEmpty()) {
+            jdbc.update("DELETE FROM tournaments WHERE source = ?", source)
+        } else {
+            namedJdbc.update(
+                "DELETE FROM tournaments WHERE source = :src AND external_id NOT IN (:ids)",
+                MapSqlParameterSource().addValue("src", source).addValue("ids", ids),
+            )
+        }
         for (t in tournaments) {
             jdbc.update(
                 """

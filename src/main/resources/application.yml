@@ -52,16 +52,32 @@ app:
     wta-dir: ${SACKMANN_WTA_DIR:data/tennis_wta}
     # seasons + ranking-files use the defaults in HistoricalLoadProperties
 
-  # Upstream live feed (RapidAPI "TennisApi"); key comes from .env via spring-dotenv.
+  # Upstream live feed (api-tennis.com); APIkey comes from .env (TENNIS_API_KEY).
   tennis-api:
-    base-url: ${TENNIS_API_BASE_URL:https://tennisapi1.p.rapidapi.com}
+    base-url: ${TENNIS_API_BASE_URL:https://api.api-tennis.com/tennis/}
     key: ${TENNIS_API_KEY:}
-    host: ${TENNIS_API_HOST:tennisapi1.p.rapidapi.com}
 
-  # Scheduled polling off by default (free tier ~50 req/day → poll via /api/admin/poll/* on demand).
+  # Scheduled polling ON by default (api-tennis Starter = 8,000 req/day; 60s live ≈ 1,440/day).
+  # The live poller also no-ops when no key is set; tests disable via app.poll.enabled=false.
   poll:
-    enabled: ${POLL_ENABLED:false}
+    enabled: ${POLL_ENABLED:true}
     ranking-top-n: ${POLL_RANKING_TOP_N:100}
+    live-interval: ${POLL_LIVE_INTERVAL:PT1M}
+    recent-interval: ${POLL_RECENT_INTERVAL:PT15M} # today's completed matches (one get_fixtures call)
+
+  # LLM (Anthropic) — the weekly digest + (Phase 6b) Tier-3 reconciliation. Key reuses the existing
+  # ANTHROPIC_API_KEY when LLM_API_KEY isn't set. The job no-ops when the key is blank.
+  llm:
+    api-key: ${LLM_API_KEY:}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    model: ${LLM_MODEL:claude-sonnet-4-6}
+    tier3-model: ${LLM_TIER3_MODEL:claude-haiku-4-5}
+    base-url: ${LLM_BASE_URL:https://api.anthropic.com}
+    enabled: ${LLM_ENABLED:true}
+
+  # Weekly "What's Worth Watching" digest schedule (Spring cron). Default Monday 09:00.
+  digest:
+    cron: ${DIGEST_CRON:0 0 9 * * MON}
 
   # Auth. The default secret is dev-only (HS256 needs >= 32 bytes) — set JWT_SECRET in prod.
   jwt:

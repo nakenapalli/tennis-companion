@@ -1,6 +1,5 @@
 package com.tenniscompanion.integration
 
-import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import java.time.Instant
 import java.time.LocalDate
@@ -10,8 +9,11 @@ import java.time.ZoneOffset
  * Concrete adapter for RapidAPI "TennisApi" (SofaScore-derived). All provider specifics live here;
  * callers only see the normalized types. Filters to singles (the MVP scope) and derives tour from
  * the player's gender (M->ATP, F->WTA).
+ *
+ * RETIRED 2026-06-01: replaced by [ApiTennisAdapter] (api-tennis.com). Kept un-annotated (not a bean)
+ * for reference; delete once the new provider is proven. Needs the old RapidAPI `RestClientConfig`
+ * headers + `SofaScoreDtos` if ever reactivated.
  */
-@Component
 class RapidApiTennisAdapter(private val client: RestClient) : TennisApiAdapter {
 
     override val source = "tennisapi"

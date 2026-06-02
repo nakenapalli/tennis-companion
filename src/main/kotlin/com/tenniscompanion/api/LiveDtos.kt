@@ -17,6 +17,7 @@ data class LiveMatchDto(
     val round: String?,
     val surface: String?,
     val tour: String?,
+    val category: String?, // circuit (ATP/WTA/Challenger/ITF/...) — the UI filters to main tour by default
     val player1: PlayerSideDto,
     val player2: PlayerSideDto,
     val score: Map<String, Any?>?,

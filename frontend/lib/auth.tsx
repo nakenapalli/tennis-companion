@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { apiFetch } from "./api";
+import { apiFetch, isJwtExpired } from "./api";
 import type { AuthResponse } from "./types";
 
 interface AuthState {
@@ -23,13 +23,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ token: null, email: null, admin: false });
   const [ready, setReady] = useState(false);
 
+  const clearSession = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("email");
+    localStorage.removeItem("admin");
+    setState({ token: null, email: null, admin: false });
+  };
+
   // hydrate from localStorage on mount (client only)
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const email = localStorage.getItem("email");
-    const admin = localStorage.getItem("admin") === "true";
-    if (token) setState({ token, email, admin });
+    if (token && !isJwtExpired(token)) {
+      setState({ token, email: localStorage.getItem("email"), admin: localStorage.getItem("admin") === "true" });
+    } else if (token) {
+      clearSession(); // expired token -> don't hydrate it, or it would break even public pages
+    }
     setReady(true);
+  }, []);
+
+  // apiFetch broadcasts this when it discards a stale token (expired client-side or 401'd by the
+  // server); mirror that into React state so the nav drops to logged-out without a manual reload.
+  useEffect(() => {
+    const onExpired = () => setState({ token: null, email: null, admin: false });
+    window.addEventListener("auth:expired", onExpired);
+    return () => window.removeEventListener("auth:expired", onExpired);
   }, []);
 
   const apply = (r: AuthResponse) => {
@@ -46,12 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apply(await apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })),
     register: async (email, password) =>
       apply(await apiFetch<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password }) })),
-    logout: () => {
-      localStorage.removeItem("token");
-      localStorage.removeItem("email");
-      localStorage.removeItem("admin");
-      setState({ token: null, email: null, admin: false });
-    },
+    logout: clearSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

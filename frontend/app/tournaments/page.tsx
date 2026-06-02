@@ -2,10 +2,13 @@
 
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
+import { isMainTour, usePrefs } from "@/lib/prefs";
 import type { Tournament } from "@/lib/types";
 
 export default function TournamentsPage() {
+  const { mainTourOnly } = usePrefs();
   const { data, isLoading } = useSWR<Tournament[]>("/api/tournaments/current", fetcher);
+  const tournaments = (data ?? []).filter((t) => !mainTourOnly || isMainTour(t.level));
 
   return (
     <div>
@@ -14,11 +17,11 @@ export default function TournamentsPage() {
 
       {isLoading ? (
         <div className="spinner">Loading…</div>
-      ) : !data || data.length === 0 ? (
-        <div className="empty">No current tournaments — an admin needs to run a tournament sync.</div>
+      ) : tournaments.length === 0 ? (
+        <div className="empty">No current ATP or WTA tournaments right now.</div>
       ) : (
         <div className="grid">
-          {data.map((t) => (
+          {tournaments.map((t) => (
             <article key={t.id} className="card">
               <div className="match-top"><strong>{t.name}</strong></div>
               <div className="sub">{[t.level, t.surface].filter(Boolean).join(" · ") || "—"}</div>

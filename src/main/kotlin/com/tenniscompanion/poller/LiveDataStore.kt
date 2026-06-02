@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
@@ -30,23 +31,7 @@ class LiveDataStore(
     // --- live matches ---
 
     fun saveLiveMatches(source: String, matches: List<LiveMatchDto>) {
-        for (m in matches) {
-            jdbc.update(
-                """
-                INSERT INTO live_matches(source, external_id, status, round, surface, tour, tournament_name,
-                                         player1_name, player2_name, player1_id, player2_id, score, start_time, last_polled_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?::bigint,?::bigint,?::jsonb,?, now())
-                ON CONFLICT (source, external_id) DO UPDATE SET
-                  status=EXCLUDED.status, round=EXCLUDED.round, surface=EXCLUDED.surface, tour=EXCLUDED.tour,
-                  tournament_name=EXCLUDED.tournament_name, player1_name=EXCLUDED.player1_name, player2_name=EXCLUDED.player2_name,
-                  player1_id=EXCLUDED.player1_id, player2_id=EXCLUDED.player2_id, score=EXCLUDED.score,
-                  start_time=EXCLUDED.start_time, last_polled_at=now()
-                """.trimIndent(),
-                source, m.externalId, m.status, m.round, m.surface, m.tour, m.tournamentName,
-                m.player1.name, m.player2.name, m.player1.playerId, m.player2.playerId,
-                m.score?.let { mapper.writeValueAsString(it) }, m.startTime?.atOffset(ZoneOffset.UTC),
-            )
-        }
+        matches.forEach { upsertMatch(source, it) }
         // matches no longer in the live feed are treated as finished
         val ids = matches.map { it.externalId }
         if (ids.isEmpty()) {
@@ -60,17 +45,44 @@ class LiveDataStore(
         redis.opsForValue().set(LIVE_KEY, mapper.writeValueAsString(matches), cacheTtl)
     }
 
+    /** Today's completed matches (from the fixtures-backed recent job). Upsert + a separate cache key. */
+    fun saveRecentMatches(source: String, matches: List<LiveMatchDto>) {
+        matches.forEach { upsertMatch(source, it) }
+        redis.opsForValue().set(RECENT_KEY, mapper.writeValueAsString(matches), cacheTtl)
+    }
+
+    private fun upsertMatch(source: String, m: LiveMatchDto) {
+        jdbc.update(
+            """
+            INSERT INTO live_matches(source, external_id, status, round, surface, tour, category, tournament_name,
+                                     player1_name, player2_name, player1_id, player2_id, score, start_time, last_polled_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?::bigint,?::bigint,?::jsonb,?, now())
+            ON CONFLICT (source, external_id) DO UPDATE SET
+              status=EXCLUDED.status, round=EXCLUDED.round, surface=EXCLUDED.surface, tour=EXCLUDED.tour,
+              category=EXCLUDED.category, tournament_name=EXCLUDED.tournament_name,
+              player1_name=EXCLUDED.player1_name, player2_name=EXCLUDED.player2_name,
+              player1_id=EXCLUDED.player1_id, player2_id=EXCLUDED.player2_id, score=EXCLUDED.score,
+              start_time=EXCLUDED.start_time, last_polled_at=now()
+            """.trimIndent(),
+            source, m.externalId, m.status, m.round, m.surface, m.tour, m.category, m.tournamentName,
+            m.player1.name, m.player2.name, m.player1.playerId, m.player2.playerId,
+            m.score?.let { mapper.writeValueAsString(it) }, m.startTime?.atOffset(ZoneOffset.UTC),
+        )
+    }
+
     fun liveMatches(source: String): List<LiveMatchDto> =
         redis.opsForValue().get(LIVE_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
             ?: readMatches(source, "live", null)
 
-    fun recentMatches(source: String, since: Instant): List<LiveMatchDto> =
-        readMatches(source, "finished", since)
+    /** Completed matches from today (UTC). Cache first (fixtures-backed), else finished rows polled today. */
+    fun recentMatches(source: String): List<LiveMatchDto> =
+        redis.opsForValue().get(RECENT_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
+            ?: readMatches(source, "finished", LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC))
 
     private fun readMatches(source: String, status: String, since: Instant?): List<LiveMatchDto> {
         val sql = StringBuilder(
             """
-            SELECT external_id, status, tournament_name, round, surface, tour,
+            SELECT external_id, status, tournament_name, round, surface, tour, category,
                    player1_name, player2_name, player1_id, player2_id, score::text AS score_json, start_time
             FROM live_matches WHERE source = ? AND status = ?
             """.trimIndent(),
@@ -86,6 +98,7 @@ class LiveDataStore(
                 round = rs.getString("round"),
                 surface = rs.getString("surface"),
                 tour = rs.getString("tour"),
+                category = rs.getString("category"),
                 player1 = PlayerSideDto(rs.getString("player1_name"), rs.getObject("player1_id") as? Long, null, null),
                 player2 = PlayerSideDto(rs.getString("player2_name"), rs.getObject("player2_id") as? Long, null, null),
                 score = rs.getString("score_json")?.let { mapper.readValue(it, Map::class.java) as Map<String, Any?> },
@@ -131,5 +144,6 @@ class LiveDataStore(
 
     companion object {
         private const val LIVE_KEY = "scores:live"
+        private const val RECENT_KEY = "scores:recent"
     }
 }
