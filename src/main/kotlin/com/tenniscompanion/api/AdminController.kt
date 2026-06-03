@@ -8,6 +8,8 @@ import com.tenniscompanion.poller.RankingsPoller
 import com.tenniscompanion.poller.RecentScoresJob
 import com.tenniscompanion.poller.TournamentSyncJob
 import com.tenniscompanion.reconcile.EntityMapStore
+import com.tenniscompanion.reconcile.Tier3ReconciliationJob
+import com.tenniscompanion.reconcile.Tier3Summary
 import com.tenniscompanion.reconcile.UnmappedEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -21,12 +23,13 @@ data class ConfirmMappingRequest(val source: String, val externalPlayerId: Strin
 
 /**
  * Admin: reconciliation review queue + on-demand poll triggers (the free tier is ~50 req/day, so we
- * poll deliberately rather than on a cron). NOTE: open for now — gated behind an admin role in Phase 4.
+ * poll deliberately rather than on a cron). Gated to ROLE_ADMIN in SecurityConfig (the admin path).
  */
 @RestController
 @RequestMapping("/api/admin")
 class AdminController(
     private val store: EntityMapStore,
+    private val tier3Job: Tier3ReconciliationJob,
     private val liveScorePoller: LiveScorePoller,
     private val rankingsPoller: RankingsPoller,
     private val tournamentSyncJob: TournamentSyncJob,
@@ -44,6 +47,11 @@ class AdminController(
         store.confirm(req.source, req.externalPlayerId, req.playerId)
         return mapOf("status" to "confirmed", "source" to req.source, "playerId" to req.playerId)
     }
+
+    /** Tier-3 LLM pass over the review queue (offline batch; gated by app.llm.enabled + a key). */
+    @PostMapping("/reconcile/tier3")
+    fun runTier3(@RequestParam(defaultValue = "50") limit: Int): Tier3Summary =
+        tier3Job.run(limit.coerceIn(1, 200))
 
     @PostMapping("/poll/live")
     fun pollLive(): Map<String, Any> = mapOf("polledMatches" to liveScorePoller.poll())

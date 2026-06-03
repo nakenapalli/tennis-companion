@@ -91,3 +91,12 @@ export interface AuthResponse {
   email: string;
   admin: boolean;
 }
+
+export interface Insight {
+  id: number;
+  type: string; // e.g. "weekly_digest"
+  title: string;
+  bodyMarkdown: string;
+  generatedAt: string;
+  publishedAt?: string;
+}

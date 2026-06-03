@@ -7,11 +7,12 @@ rankings, player/tournament detail backed by free historical data, and one AI-ge
 Backend: **Kotlin + Spring Boot 4.0** (JVM 21), Postgres 16, Redis 7, Flyway. Frontend:
 **Next.js 16** (App Router, TypeScript, SWR). See the design docs for the full spec.
 
-> **Status:** Phases 0–6a complete — historical foundation (Sackmann loader + player/H2H),
+> **Status:** Phases 0–6b complete — historical foundation (Sackmann loader + player/H2H),
 > live scores & rankings (poll + reconcile + Redis fan-out), tournaments, users/auth (JWT),
-> the Next.js frontend, and the **weekly AI "What's Worth Watching" digest** (offline batch,
-> grounded in DB facts, DRAFT → manual publish — Anthropic Claude via `LLM_API_KEY`/`ANTHROPIC_API_KEY`).
-> Next: Phase 6b (reconciliation Tier 3 + a frontend digest page), then Phase 7 (polish).
+> the Next.js frontend, the **weekly AI "What's Worth Watching" digest** (offline batch,
+> grounded in DB facts, DRAFT → manual publish — Anthropic Claude via `LLM_API_KEY`/`ANTHROPIC_API_KEY`)
+> with its **`/insights` page**, and reconciliation **Tier 3** (an offline LLM pass over the review queue).
+> Next: Phase 7 (polish).
 
 ## Prerequisites
 - **JDK 21** (Temurin). This repo uses the Gradle wrapper (`./gradlew`), which respects `JAVA_HOME`.
@@ -68,4 +69,4 @@ src/main/resources/db/migration/   Flyway migrations
 ## Attribution
 Historical data derived from **Jeff Sackmann / Tennis Abstract** datasets, licensed
 **CC BY-NC-SA 4.0** — this is a non-commercial / portfolio build. Live data courtesy of
-**TennisApi (RapidAPI)**. These credits appear in the in-app footer on every page.
+**API Tennis (api-tennis.com)**. These credits appear in the in-app footer on every page.

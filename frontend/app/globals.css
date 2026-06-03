@@ -89,3 +89,14 @@ tr:hover td { background: var(--panel); }
 .player-link:hover { color: var(--accent); }
 .fav-btn { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--gold); cursor: pointer; padding: 6px 12px; font-size: 13px; }
 .fav-btn:hover { border-color: var(--gold); }
+
+/* weekly digest ("What's Worth Watching") — markdown content, scoped so headings
+   read as prose rather than the uppercase/muted section labels the global h2 uses */
+.digest { max-width: 720px; }
+.digest-body h1 { font-size: 21px; margin: 22px 0 8px; }
+.digest-body h2 { font-size: 17px; text-transform: none; letter-spacing: normal; color: var(--text); margin: 26px 0 10px; }
+.digest-body h3 { font-size: 15px; color: var(--text); margin: 20px 0 6px; }
+.digest-body p { font-size: 15px; line-height: 1.65; margin: 0 0 14px; }
+.digest-body ul { margin: 0 0 16px; padding-left: 20px; }
+.digest-body li { font-size: 15px; line-height: 1.6; margin: 5px 0; }
+.digest-body strong { font-weight: 700; }
