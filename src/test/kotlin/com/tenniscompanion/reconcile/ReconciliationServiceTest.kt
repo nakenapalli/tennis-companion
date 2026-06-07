@@ -30,6 +30,7 @@ class ReconciliationServiceTest(
         insert(144750, "Carlos", "Alcaraz", "ARG", "1996-01-01") // a fabricated same-name collision
         insert(206173, "Jannik", "Sinner", "ITA", "2001-08-16")
         insert(100644, "Alexander", "Zverev", "GER", "1997-04-20")
+        insert(220000, "Felix", "Auger-Aliassime", "CAN", "2000-08-08") // hyphenated compound surname
     }
 
     private fun insert(id: Long, first: String, last: String, country: String, dob: String) {
@@ -55,6 +56,20 @@ class ReconciliationServiceTest(
     fun `tier 1 handles an initial`() {
         val r = service.resolve(req("x2", "A. Zverev"))
         assertEquals(100644, r.playerId)
+    }
+
+    @Test
+    fun `tier 1 resolves a hyphenated compound surname`() {
+        // upstream hyphen vs stored hyphen, both folded the same way on each side
+        val r = service.resolve(req("x8", "F. Auger-Aliassime"))
+        assertEquals(220000, r.playerId)
+        assertEquals(ReconciliationTier.DETERMINISTIC, r.tier)
+    }
+
+    @Test
+    fun `tier 1 resolves a multi-word surname given with a space`() {
+        val r = service.resolve(req("x9", "Felix Auger Aliassime"))
+        assertEquals(220000, r.playerId)
     }
 
     @Test

@@ -51,11 +51,24 @@ sits just above OS env vars so values resolve reliably, below command-line args)
 - **Player-id namespacing:** ATP = raw Sackmann id; **WTA = raw id + 1,000,000,000** (`player_id >= 1e9` ⇒ WTA).
 - **Provider isolation:** all upstream specifics live behind `integration/TennisApiAdapter`; everything else
   depends only on the `Normalized*` types — that's what made the RapidAPI→API Tennis swap cheap.
+- **Served order = importance weight:** match + tournament lists are sorted by a computed weight
+  (`integration/MatchWeighting` + `TournamentTierRegistry`), so a Grand Slam final leads over a
+  later-started 250 match. The feed has **no slam marker or 250/500 size**, so tier comes from a curated
+  `resources/tournament-tiers.json` (matched by name, accent/case-insensitive) with the feed `category` as
+  fallback; juniors are classified first. Sorting is applied on read in `LiveDataStore`/`TournamentStore`.
 - **Reconciliation never blocks serving:** unmapped players fall back to the upstream display name; the hard
-  residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`,
-  admin-triggered via `POST /api/admin/reconcile/tier3`) classifies that queue against a rebuilt candidate set.
-- **The LLM is grounded only:** it writes narrative around a DB-built fact sheet, never from its own memory;
-  digests are stored `DRAFT` → manually published.
+  residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`) classifies
+  that queue against a rebuilt candidate set — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`)
+  and also on-demand via `POST /api/admin/reconcile/tier3`.
+- **The LLM is grounded only:** it writes narrative around a DB-built fact sheet (the authoritative spine
+  for scores/names), never from its own memory. It blends in **scraped full-text tennis news**
+  (`NewsSource`/`ScrapedNewsSource` + a per-site `SiteScraper`, e.g. `TennisDotComScraper`) for cited
+  context + voice — articles are used **transiently and never persisted**, any article-sourced fact is
+  **cited inline**, and an **anti-plagiarism** check (`DigestParsing.verbatimOverlaps`) blocks copied
+  phrasing. After generation an LLM **fact-check** (`FactCheckPrompts`) verifies the hard facts against the
+  fact sheet; the job **auto-publishes only if the fact-check is clean**, else leaves a `DRAFT`. The
+  published digest is **embedded on the home page** (no separate tab); if nothing is published the home
+  just shows scores + rankings.
 - **Licensing:** Sackmann data is CC BY-NC-SA → **non-commercial / portfolio only**, with in-app
   attribution and **no paywall/ads**.
 

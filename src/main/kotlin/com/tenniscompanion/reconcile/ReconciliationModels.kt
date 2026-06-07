@@ -34,4 +34,8 @@ data class ReconciliationProperties(
     val confidenceThreshold: Double = 0.70,
     /** Tier 2: the score margin the top candidate must clear over the runner-up to auto-map. */
     val tier2Margin: Double = 1.0,
+    /** Whether the SCHEDULED Tier-3 batch runs (the admin trigger works regardless). */
+    val tier3Enabled: Boolean = true,
+    /** Max review-queue rows the scheduled Tier-3 batch processes per run. */
+    val tier3BatchSize: Int = 100,
 )

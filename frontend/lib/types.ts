@@ -51,6 +51,7 @@ export interface LiveMatch {
   player2: PlayerSide;
   score?: { home?: SideScore; away?: SideScore } | null;
   startTime?: string;
+  tier?: string; // GRAND_SLAM | FINALS | MASTERS_1000 | TOUR_500 | TOUR_250 | CHALLENGER | ITF | JUNIOR | OTHER
 }
 
 export interface SideScore {

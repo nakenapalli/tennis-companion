@@ -100,3 +100,27 @@ tr:hover td { background: var(--panel); }
 .digest-body ul { margin: 0 0 16px; padding-left: 20px; }
 .digest-body li { font-size: 15px; line-height: 1.6; margin: 5px 0; }
 .digest-body strong { font-weight: 700; }
+.digest-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.digest-body a:hover { filter: brightness(1.1); }
+
+/* home: scores (left) | latest digest (right), stacking on narrow screens */
+.home-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 100px; align-items: start; }
+@media (max-width: 760px) { .home-split { grid-template-columns: 1fr; } }
+
+/* tournament tier badges on match cards / scores sections */
+.match-meta { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.tourney-head { display: flex; align-items: center; gap: 10px; margin: 28px 0 12px; }
+.tourney-head h2 { margin: 0; } /* drop the global h2's asymmetric margin so the badges center on the text */
+.tour-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 7px; border-radius: 999px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; }
+.tier-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 7px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.tier-slam { color: #fbbf24; background: rgba(251, 191, 36, 0.14); border-color: rgba(251, 191, 36, 0.35); }       /* gold */
+.tier-finals { color: #f59e0b; background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.35); }     /* amber-gold */
+.tier-1000 { color: #cbd5e1; background: rgba(203, 213, 225, 0.12); border-color: rgba(203, 213, 225, 0.30); }     /* silver */
+.tier-500 { color: #60a5fa; background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.32); }        /* blue */
+.tier-250 { color: #93c5fd; background: rgba(147, 197, 253, 0.12); border-color: rgba(147, 197, 253, 0.28); }      /* light blue */
+.tier-challenger { color: #7d93b3; background: rgba(125, 147, 179, 0.12); border-color: rgba(125, 147, 179, 0.28); } /* steel blue */
+.tier-itf { color: #64748b; background: rgba(100, 116, 139, 0.14); border-color: rgba(100, 116, 139, 0.30); }      /* slate */
+.tier-junior { color: #8b97a7; background: rgba(139, 151, 167, 0.10); border-color: rgba(139, 151, 167, 0.25); }   /* muted */
+
+/* /scores grouped by tournament */
+.tourney-group { margin-bottom: 18px; }

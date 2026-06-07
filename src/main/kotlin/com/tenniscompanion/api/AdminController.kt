@@ -1,8 +1,13 @@
 package com.tenniscompanion.api
 
+import com.tenniscompanion.config.NewsProperties
 import com.tenniscompanion.insight.DigestStore
+import com.tenniscompanion.insight.NewsSource
+import com.tenniscompanion.insight.SiteScraper
 import com.tenniscompanion.insight.StoredInsight
 import com.tenniscompanion.insight.WeeklyDigestJob
+import java.time.LocalDate
+import java.time.ZoneOffset
 import com.tenniscompanion.poller.LiveScorePoller
 import com.tenniscompanion.poller.RankingsPoller
 import com.tenniscompanion.poller.RecentScoresJob
@@ -36,6 +41,9 @@ class AdminController(
     private val recentScoresJob: RecentScoresJob,
     private val weeklyDigestJob: WeeklyDigestJob,
     private val digestStore: DigestStore,
+    private val news: NewsSource,
+    private val newsProps: NewsProperties,
+    private val scrapers: List<SiteScraper>,
 ) {
 
     @GetMapping("/unmapped-entities")
@@ -77,4 +85,27 @@ class AdminController(
     @PostMapping("/insights/{id}/publish")
     fun publishInsight(@PathVariable id: Long): Map<String, Any> =
         mapOf("id" to id, "published" to digestStore.publish(id))
+
+    /**
+     * Debug the RSS half of the digest WITHOUT calling the LLM: returns the articles `RssNewsSource`
+     * fetches for the window. Lets you verify feeds are reachable + parse correctly before spending tokens.
+     * Optional `days` (freshness window) and `limit` overrides default to the `app.news.*` settings.
+     */
+    @GetMapping("/news/preview")
+    fun newsPreview(
+        @RequestParam(required = false) days: Long?,
+        @RequestParam(required = false) limit: Int?,
+    ): Map<String, Any?> {
+        val since = LocalDate.now(ZoneOffset.UTC)
+            .minusDays(days ?: newsProps.maxAgeDays)
+            .atStartOfDay(ZoneOffset.UTC).toInstant()
+        val articles = news.recentArticles(since, (limit ?: newsProps.maxArticles).coerceIn(1, 50))
+        return mapOf(
+            "enabled" to newsProps.enabled,
+            "sites" to scrapers.map { mapOf("publication" to it.publication, "index" to it.indexUrl) },
+            "since" to since.toString(),
+            "count" to articles.size,
+            "articles" to articles.map { it.asContext() },
+        )
+    }
 }

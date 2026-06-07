@@ -50,7 +50,7 @@ This is the single most important constraint and it shapes data‑source choices
 1. **Customizable home screen** — a per‑user configurable dashboard of widgets: recent results you missed, currently live matches, latest ATP/WTA rankings, favorite‑player activity, and the latest AI digest. Each widget is tappable to go deeper.
 2. **Poll‑based scores & rankings** — live‑ish match status and recent results, plus current ATP/WTA singles rankings, pulled from one cheap API on a server‑side schedule.
 3. **Player & tournament detail** — player profiles backed by historical data (career results, head‑to‑head), and a "current tournaments" view.
-4. **One AI artifact: the weekly "What's Worth Watching" digest** — a short editorial piece generated weekly, grounded entirely in real data from the database (upcoming tournaments, draws, seeds, notable matchups), explaining what to watch and why.
+4. **One AI artifact: the weekly "What's Worth Watching" digest** — a short editorial piece generated weekly, grounded in real database facts (tournaments, notable matchups, rankings) for all scores/names, and blended with **scraped full-text tennis news** (manually-chosen sites, e.g. tennis.com) for added context and a more natural voice. Articles are used transiently and never persisted; any article-sourced fact is cited inline; an anti-plagiarism check guards copying; and a post-generation LLM **fact-check** against the DB gates **auto-publish** (clean → published, else DRAFT). The published digest is embedded on the home page under the scores.
 
 ### Out of scope (future)
 - Doubles, mixed, team events (Davis/BJK Cup) — singles tour‑level only for MVP.
@@ -169,7 +169,7 @@ Screens (as built unless noted):
 - **Player detail** — profile, recent results (Sackmann), head‑to‑head, add‑to‑favorites.
 - **Tournaments** — current list (no draw info — feed doesn't provide it).
 - **Settings** — manage favorites, plus an **"ATP & WTA only" display toggle** (default on; hides Challenger/ITF/junior events). Persisted to localStorage so it works for anonymous users too.
-- **Digest** (`/insights`) — ✅ renders the latest published "What's Worth Watching" digest from `insights/latest`, with a small dependency-free Markdown renderer (`components/Markdown.tsx`).
+- **Digest** — ✅ the latest published "What's Worth Watching" digest is **embedded on the home page under the scores** (no separate tab), fetched from `insights/latest` and rendered with a small dependency-free Markdown renderer (`components/Markdown.tsx`). It only appears when a digest is published, so any failure (scrape/LLM/fact-check) gracefully falls back to scores + rankings.
 
 State: SWR for server state; the display toggle via a small client context. No client‑side secrets — the LLM and upstream keys live only on the backend.
 
@@ -220,11 +220,12 @@ An LLM asked for "tennis tidbits" or "head‑to‑head records" will confidently
    - a few notable **completed** matchups, each pre‑resolved into unambiguous facts so the model can't misread them: a canonical `result` string ("X beats Y 6‑3, 4‑6, 6‑0", winner‑first, all sets), winner/loser + ranks, a clean `round` ("Round of 16"), a plain H2H summary ("X leads 2‑1") + last meeting,
    - recent form (last few results) for the headline players.
    Player names/ranks come from the **reconciled Sackmann profile** (not the feed's "C. Alcaraz" display strings); H2H/form come from `matches`. Everything is a real DB value.
-2. **Build the prompt**: provide the fact sheet as data and instruct the model to write a short, engaging "what's worth watching this week and why" piece that uses **only** the supplied facts — names, numbers, and records must come from the fact sheet, and it must not introduce statistics that aren't present.
+1b. **Scrape news context** *(added)* — `NewsSource`/`ScrapedNewsSource` scrapes recent **full** articles from manually‑chosen sites (one `SiteScraper` per source, e.g. `TennisDotComScraper`): discover article URLs from the site's news index, fetch each page, extract title/author/date/body, rank by mentions of the week's players/tournaments. Articles are used **transiently only — never persisted**. The digest is a news‑enriched artifact: if no article can be scraped, the run is **skipped**.
+2. **Build the prompt**: provide the fact sheet (authoritative for all scores/names) and the `<articles>` block. The model writes "what's worth watching this week and why" using fact‑sheet facts (uncited) plus article context — but must reword everything (no copying) and **cite any article‑sourced fact inline** as a markdown link, citing only supplied sources.
 3. **Call the LLM** via `LlmClient`.
-4. **Validate (lightweight)**: check that player names / tournament names appearing in the output exist in the fact sheet; flag mismatches. This is a cheap guard against hallucinated entities, not a full fact‑checker.
-5. **Store** the result in `generated_insights` as `DRAFT`, including the fact sheet used (`source_data` JSON) and model identifier for traceability.
-6. **Publish**: manual flip to `PUBLISHED` for MVP; the serving API only returns published insights.
+4. **Validate**: (a) **anti‑plagiarism** — `verbatimOverlaps` flags any long verbatim run shared with a source; on a hit, regenerate once with a stricter reminder, then abort rather than save a copy; (b) **fabricated citations** + (c) **ungrounded entities** — advisory logs.
+5. **Store** the result in `generated_insights`, with `source_data` = the **fact sheet only** (our own DB data; **no article data is persisted**) + the model id.
+6. **Fact-check & auto-publish**: a second LLM pass (`FactCheckPrompts`) verifies the digest's hard facts against the (whole, small) fact sheet. If it runs clean → **auto-publish**; on any contradiction or if the check couldn't run → leave `DRAFT`. The serving API + home page only show published insights.
 
 Keep the AI's job to **framing and curation** — with all facts injected. *As built (per user feedback), the digest is a **concise, scannable results roundup**: a plain title, a few model‑chosen `##` sections ("Top Men's Results", "Notable Upsets", …) with one‑sentence `-` bullets, present tense, plain verbs. The prompt forbids editorializing the score/round (state the `result` and `round` verbatim; never narrate a set‑by‑set trajectory or infer a stage). See the prompts doc §1 for the current prompt. The original "250–400 word warm editorial" framing was tuned down to this.*
 
@@ -428,7 +429,7 @@ Build in vertical slices so something works end‑to‑end early. Each phase sho
 - **Phase 5 — Frontend.** ✅ Done. Next.js 16 app: Home, Scores (live‑or‑recently‑completed, SWR polling — no SSE), Rankings (ATP/WTA), Player detail, Tournaments, Settings (incl. an **ATP/WTA‑only display toggle**). Footer attribution.
 - **Provider swap (added milestone).** ✅ Done. RapidAPI "TennisApi" → **API Tennis**; new adapter/DTOs, country→IOC helper, scheduled polling on, `RecentScoresJob`, the `category` column + main‑tour filtering.
 - **Phase 6a — AI weekly digest (backend).** ✅ Done. `LlmClient` + `AnthropicLlmClient`, `FactSheetBuilder`, `WeeklyDigestJob` (grounded prompt → validate → `DRAFT`), `DigestStore` + `generated_insights`, serving `insights/latest`/`{id}` + admin generate/list/publish.
-- **Phase 6b — AI Tier 3 + digest frontend.** ✅ Done. Reconciliation **Tier 3** (`Tier3ReconciliationJob`) as an offline, admin‑triggered batch over the review queue (Haiku via `LlmClient`): `V7` adds `entity_map.tour`/`country_code`/`rank_hint` so the job re‑derives candidates with the shared `CandidateFinder`, validates the chosen id was actually offered, and writes confirmed/review/no‑match back to `entity_map`. Trigger: `POST /api/admin/reconcile/tier3`. Plus the frontend **digest page** (`/insights`) rendering the published markdown.
+- **Phase 6b — AI Tier 3 + digest frontend.** ✅ Done. Reconciliation **Tier 3** (`Tier3ReconciliationJob`) as an offline batch over the review queue (Haiku via `LlmClient`), run on a schedule (default daily 07:00 UTC, `app.reconcile.tier3-cron`) and on-demand via the admin endpoint: `V7` adds `entity_map.tour`/`country_code`/`rank_hint` so the job re‑derives candidates with the shared `CandidateFinder`, validates the chosen id was actually offered, and writes confirmed/review/no‑match back to `entity_map`. Trigger: `POST /api/admin/reconcile/tier3`. Plus the frontend **digest page** (`/insights`) rendering the published markdown.
 - **Phase 7 — Polish.** ⏳ Pending. Admin reconciliation review UI, error handling for upstream outages (serve last good data), rate limiting on the upstream client, optional SSE/adaptive cadence/draws.
 
 ---

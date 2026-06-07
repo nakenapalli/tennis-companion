@@ -19,6 +19,10 @@
 
 Produces the "what's worth watching this week and why" editorial piece. Input is a **fact sheet** assembled from Postgres; output is a title + markdown body to store in `generated_insights`.
 
+> **News context (as-built).** The user prompt also includes an `<articles>` block — recent **full** tennis articles (title, author, publication, url, body) **scraped** from manually-chosen sites (`ScrapedNewsSource` + a `SiteScraper` per site, e.g. `TennisDotComScraper`) — for context and to model the natural voice of tennis writing. Rules enforced in the system prompt: the fact sheet stays authoritative for all scores/names (no citation needed); the model must **reword everything (never copy)** and **cite any article-sourced fact inline** as a markdown link `([Publication](url))`, citing only supplied sources. Post-generation validation (`DigestParsing`): `verbatimOverlaps` blocks copied phrasing (one stricter retry, then abort), `fabricatedCitations` + `ungroundedEntities` are advisory. **Articles are used transiently and never persisted** (`source_data` holds only the DB fact sheet). The digest is news-enriched: if no article can be scraped, the run is skipped.
+>
+> **Fact-check + auto-publish (as-built).** After generation a second LLM pass (`FactCheckPrompts`/`FactCheckParsing`) verifies the digest's hard facts (scores/winners/rankings/rounds) against the **whole** fact sheet — small and complete, so no retrieval is needed; cited article context is out of scope. Clean → the job **auto-publishes**; any contradiction (or a failed check) → it stays `DRAFT`. The home page embeds only published digests.
+
 ### 1.1 Fact sheet schema (assembled by `WeeklyDigestJob`, passed into the prompt)
 
 Every value here is a real value queried from the database. The model is told it may use *only* what appears in this object. **As-built shape** (from `insight/FactSheetBuilder`):
@@ -138,7 +142,7 @@ This is the safety net behind the prompt's grounding rules — cheap entity chec
 
 ## 2. Tier 3 reconciliation classifier
 
-> ✅ **Built in Phase 6b** (`reconcile/Tier3ReconciliationJob` + `Tier3Prompts`/`Tier3Parsing`). It runs as an offline, admin-triggered **batch over the review queue** (`POST /api/admin/reconcile/tier3`), never on the hot poll path, using **Haiku** (`claude-haiku-4-5`) through `LlmClient`. Migration `V7` added `entity_map.tour`/`country_code`/`rank_hint` so each row's candidate set is re-derived (via the shared `CandidateFinder`); the prompt and validation below are as-built.
+> ✅ **Built in Phase 6b** (`reconcile/Tier3ReconciliationJob` + `Tier3Prompts`/`Tier3Parsing`). It runs as an offline **batch over the review queue** — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`) and also on-demand via `POST /api/admin/reconcile/tier3` — never on the hot poll path, using **Haiku** (`claude-haiku-4-5`) through `LlmClient`. Migration `V7` added `entity_map.tour`/`country_code`/`rank_hint` so each row's candidate set is re-derived (via the shared `CandidateFinder`); the prompt and validation below are as-built.
 
 Reached only when Tiers 0–2 (cache, deterministic string match, rules scorer) cannot uniquely resolve an external player. The model picks the best match from a **supplied candidate set** — or "none" — with a confidence score and a one-line rationale. It is doing disambiguation over evidence, not recall.
 

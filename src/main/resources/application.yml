@@ -79,6 +79,24 @@ app:
   digest:
     cron: ${DIGEST_CRON:0 0 9 * * MON}
 
+  # Tennis news scraped (full articles) for the digest's cited context. Sources are code (one SiteScraper
+  # per site, e.g. tennis.com); these are the runtime knobs. Article-sourced facts are cited inline and an
+  # anti-plagiarism check guards the output. Articles are used transiently and never persisted; if none can
+  # be scraped, the digest run is skipped.
+  news:
+    enabled: ${NEWS_ENABLED:true}
+    max-articles: ${NEWS_MAX_ARTICLES:4}
+    max-age-days: ${NEWS_MAX_AGE_DAYS:8}
+    per-article-char-cap: ${NEWS_PER_ARTICLE_CHAR_CAP:4000}
+
+  # Reconciliation. Tiers 0-2 run inline on the poll path; Tier 3 (LLM) is a scheduled batch over the
+  # review queue (also triggerable via POST /api/admin/reconcile/tier3). Default daily 07:00 UTC, after
+  # the morning rankings/tournament jobs populate the queue. Still no-ops unless app.llm is enabled + keyed.
+  reconcile:
+    tier3-cron: ${RECONCILE_TIER3_CRON:0 0 7 * * *}
+    tier3-enabled: ${RECONCILE_TIER3_ENABLED:true}
+    tier3-batch-size: ${RECONCILE_TIER3_BATCH_SIZE:100}
+
   # Auth. The default secret is dev-only (HS256 needs >= 32 bytes) — set JWT_SECRET in prod.
   jwt:
     secret: ${JWT_SECRET:dev-only-change-me-please-a-32plus-byte-secret!!}

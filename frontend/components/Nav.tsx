@@ -9,7 +9,6 @@ const LINKS: [string, string][] = [
   ["/scores", "Scores"],
   ["/rankings", "Rankings"],
   ["/tournaments", "Tournaments"],
-  ["/insights", "Watching"],
 ];
 
 export function Nav() {

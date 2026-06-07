@@ -3,6 +3,7 @@ package com.tenniscompanion.poller
 import com.tenniscompanion.api.LiveMatchDto
 import com.tenniscompanion.api.PlayerSideDto
 import com.tenniscompanion.api.RankingRowDto
+import com.tenniscompanion.integration.MatchWeighting
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -25,6 +26,7 @@ class LiveDataStore(
     private val namedJdbc: NamedParameterJdbcTemplate,
     private val redis: StringRedisTemplate,
     private val mapper: ObjectMapper,
+    private val weighting: MatchWeighting,
 ) {
     private val cacheTtl = Duration.ofHours(24) // sparse polling on the free tier → long TTL
 
@@ -70,14 +72,27 @@ class LiveDataStore(
         )
     }
 
-    fun liveMatches(source: String): List<LiveMatchDto> =
+    fun liveMatches(source: String): List<LiveMatchDto> = weightedSort(
         redis.opsForValue().get(LIVE_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
-            ?: readMatches(source, "live", null)
+            ?: readMatches(source, "live", null),
+    )
 
     /** Completed matches from today (UTC). Cache first (fixtures-backed), else finished rows polled today. */
-    fun recentMatches(source: String): List<LiveMatchDto> =
+    fun recentMatches(source: String): List<LiveMatchDto> = weightedSort(
         redis.opsForValue().get(RECENT_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
-            ?: readMatches(source, "finished", LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC))
+            ?: readMatches(source, "finished", LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC)),
+    )
+
+    /** Order by importance (Grand Slam > tour > Challenger > …, late rounds first), then recency — so the
+     *  most significant match leads regardless of when it started. Applied on read so it's consistent
+     *  whether served from Redis or the Postgres fallback. */
+    private fun weightedSort(matches: List<LiveMatchDto>): List<LiveMatchDto> =
+        matches
+            .map { it.copy(tier = weighting.tierOf(it.tournamentName, it.category).name) } // stamp tier for the UI badge
+            .sortedWith(
+                compareByDescending<LiveMatchDto> { weighting.weight(it.tournamentName, it.category, it.round) }
+                    .thenByDescending { it.startTime ?: Instant.MIN },
+            )
 
     private fun readMatches(source: String, status: String, since: Instant?): List<LiveMatchDto> {
         val sql = StringBuilder(

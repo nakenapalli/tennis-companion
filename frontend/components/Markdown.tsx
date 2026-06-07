@@ -9,18 +9,29 @@ import React from "react";
  * digest body is fully grounded and trusted, raw text can't inject HTML.
  */
 
-/** Split a line into nodes, turning `**bold**` spans into <strong>. */
+/**
+ * Split a line into nodes, turning `**bold**` spans into <strong> and `[text](url)` into external links
+ * (used by the digest's inline source citations). Links open in a new tab with a safe rel.
+ */
 function inline(text: string, keyBase: string): React.ReactNode[] {
   return text
-    .split(/(\*\*[^*]+\*\*)/g)
+    .split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g)
     .filter((part) => part.length > 0)
-    .map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={`${keyBase}-${i}`}>{part.slice(2, -2)}</strong>
-      ) : (
-        <React.Fragment key={`${keyBase}-${i}`}>{part}</React.Fragment>
-      ),
-    );
+    .map((part, i) => {
+      const key = `${keyBase}-${i}`;
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={key}>{part.slice(2, -2)}</strong>;
+      }
+      const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+      if (link) {
+        return (
+          <a key={key} href={link[2]} target="_blank" rel="noopener noreferrer">
+            {link[1]}
+          </a>
+        );
+      }
+      return <React.Fragment key={key}>{part}</React.Fragment>;
+    });
 }
 
 export function Markdown({ source }: { source: string }) {

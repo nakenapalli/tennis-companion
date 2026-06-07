@@ -55,17 +55,17 @@ class ApiTennisAdapter(
 
     /**
      * Recently completed singles, most-recent first. Spans yesterday+today (UTC) so the list isn't
-     * empty around the UTC-midnight boundary, and is capped — it's a "recently completed" glance, not
-     * an archive. Shown by the UI when nothing is live.
+     * empty around the UTC-midnight boundary. Capped — a "recently completed" glance, not an archive —
+     * but the cap keeps EVERY main-tour result and trims only lower circuits (see [capRecent]). Shown
+     * by the UI when nothing is live.
      */
     override fun fetchRecentMatches(): List<NormalizedMatch> {
         val today = LocalDate.now(ZoneOffset.UTC)
-        return fixturesRange(today.minusDays(1).toString(), today.toString())
+        val finished = fixturesRange(today.minusDays(1).toString(), today.toString())
             .filter(::isSingles)
             .mapNotNull(::toMatch)
             .filter { it.status == "finished" }
-            .sortedByDescending { it.startTime }
-            .take(60) // a recent glance, not an archive
+        return capRecent(finished)
     }
 
     private fun fixtures(method: String): List<FixtureDto> {
@@ -212,5 +212,24 @@ class ApiTennisAdapter(
         "Challenger" -> 1
         "ITF" -> 2
         else -> 3
+    }
+
+    /** ATP, WTA, and Grand Slam are "main tour"; Challenger/ITF/junior are lower circuits. */
+    internal fun isMainTourCategory(category: String?): Boolean =
+        category == "ATP" || category == "WTA" || category == "Grand Slam"
+
+    /**
+     * Trims the recent feed without letting lower circuits crowd out main-tour results. ITF/Challenger
+     * can number in the hundreds a day, so a single global cap (by start time) would push an earlier-
+     * started ATP/WTA/Slam match off the list — that's how a WTA semifinal went missing. So keep EVERY
+     * main-tour result and cap only the lower circuits; re-sort the combined list newest-start-first.
+     */
+    internal fun capRecent(finished: List<NormalizedMatch>): List<NormalizedMatch> {
+        val (mainTour, lower) = finished.partition { isMainTourCategory(it.category) }
+        return (mainTour + lower.take(RECENT_LOWER_CAP)).sortedByDescending { it.startTime }
+    }
+
+    private companion object {
+        const val RECENT_LOWER_CAP = 40 // lower-circuit results kept per refresh; main tour is uncapped
     }
 }

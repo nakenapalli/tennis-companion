@@ -3,7 +3,9 @@ package com.tenniscompanion.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.client.RestClient
+import java.time.Duration
 
 @Configuration
 class RestClientConfig {
@@ -32,4 +34,18 @@ class RestClientConfig {
             .defaultHeader("anthropic-version", "2023-06-01")
             .defaultHeader("content-type", "application/json")
             .build()
+
+    /** RestClient for fetching RSS news feeds. No base URL (feeds are absolute); a UA header (some feeds
+     *  reject blank agents) and tight timeouts so one slow feed can't stall digest generation. */
+    @Bean
+    fun newsRestClient(): RestClient {
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(Duration.ofSeconds(5))
+            setReadTimeout(Duration.ofSeconds(8))
+        }
+        return RestClient.builder()
+            .requestFactory(factory)
+            .defaultHeader("User-Agent", "TennisCompanion/1.0 (portfolio)")
+            .build()
+    }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.tenniscompanion.config.LlmProperties
 import com.tenniscompanion.insight.LlmClient
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 
@@ -39,8 +40,10 @@ private data class Tier3CandidateView(
  * set the live cascade used, asks the LLM (Haiku) to pick one candidate or none with a confidence,
  * validates the choice was one we actually offered, and writes the result back to entity_map.
  *
- * Admin-triggered (never on the hot poll path) and gated on `app.llm.enabled` + a key. A confirmed
- * match here becomes a free Tier-0 cache hit next time; anything below threshold stays for a human.
+ * Runs on a schedule (default daily 07:00 UTC) and on-demand via `POST /api/admin/reconcile/tier3`;
+ * never on the hot poll path. Gated on `app.llm.enabled` + a key (plus `app.reconcile.tier3-enabled`
+ * for the scheduled run). A confirmed match here becomes a free Tier-0 cache hit next time; anything
+ * below threshold stays for a human.
  */
 @Component
 class Tier3ReconciliationJob(
@@ -52,6 +55,18 @@ class Tier3ReconciliationJob(
     private val mapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Scheduled batch — default daily 07:00 UTC, after the morning rankings/tournament jobs have
+     * refreshed the review queue. No-ops unless Tier-3 scheduling is enabled and the LLM key is set;
+     * batch size is `app.reconcile.tier3-batch-size`.
+     */
+    @Scheduled(cron = "\${app.reconcile.tier3-cron:0 0 7 * * *}")
+    fun scheduled() {
+        if (reconProps.tier3Enabled && props.enabled && props.effectiveKey.isNotBlank()) {
+            run(reconProps.tier3BatchSize)
+        }
+    }
 
     fun run(limit: Int = 50): Tier3Summary {
         if (!props.enabled || props.effectiveKey.isBlank()) {

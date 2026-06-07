@@ -23,15 +23,20 @@ class CandidateFinder(private val namedJdbc: NamedParameterJdbcTemplate) {
 
     fun bySurname(tour: String, surnameTokens: List<String>): List<PlayerCandidate> {
         if (surnameTokens.isEmpty()) return emptyList()
+        // Match the DB-side surname the SAME way NameNormalizer folds the upstream name: strip accents AND
+        // punctuation to spaces, so a hyphen/space difference can't cause a miss. Pair with surnameKeys()
+        // (singles + contiguous joins) so multi-word surnames are offered as keys. See NameNormalizer.
+        val keys = NameNormalizer.surnameKeys(surnameTokens)
         val sql = """
             SELECT player_id, first_name, last_name, country_code,
                    EXTRACT(YEAR FROM birth_date)::int AS birth_year
             FROM players
-            WHERE tour = :tour AND lower(unaccent(last_name)) IN (:surnames)
+            WHERE tour = :tour
+              AND trim(regexp_replace(lower(unaccent(last_name)), '[^a-z0-9]+', ' ', 'g')) IN (:surnames)
         """.trimIndent()
         val params = MapSqlParameterSource()
             .addValue("tour", tour)
-            .addValue("surnames", surnameTokens)
+            .addValue("surnames", keys)
         return namedJdbc.query(sql, params) { rs, _ ->
             PlayerCandidate(
                 rs.getLong("player_id"),

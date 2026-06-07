@@ -22,6 +22,7 @@ data class LiveMatchDto(
     val player2: PlayerSideDto,
     val score: Map<String, Any?>?,
     val startTime: Instant?,
+    val tier: String? = null, // TournamentTier name (GRAND_SLAM/MASTERS_1000/…); stamped on read for the UI badge
 )
 
 data class RankingRowDto(

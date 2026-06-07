@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -120,6 +121,36 @@ class ApiTennisAdapterTest {
         assertEquals("2155", t.externalId) // highest tier, then lowest key — stable id
         assertEquals(LocalDate.parse("2026-05-25"), t.startDate)
         assertEquals(LocalDate.parse("2026-06-07"), t.endDate)
+    }
+
+    @Test
+    fun `isMainTourCategory treats ATP, WTA, and Grand Slam as main tour`() {
+        assertTrue(adapter.isMainTourCategory("ATP"))
+        assertTrue(adapter.isMainTourCategory("WTA"))
+        assertTrue(adapter.isMainTourCategory("Grand Slam"))
+        assertFalse(adapter.isMainTourCategory("Challenger"))
+        assertFalse(adapter.isMainTourCategory("ITF"))
+        assertFalse(adapter.isMainTourCategory(null))
+    }
+
+    @Test
+    fun `capRecent keeps every main-tour match and caps only lower circuits`() {
+        val base = Instant.parse("2026-06-01T00:00:00Z")
+        fun match(id: String, category: String, start: Instant) = NormalizedMatch(
+            externalId = id, status = "finished", category = category, startTime = start,
+            player1 = NormalizedPlayerRef("${id}a", "P$id A", "WTA"),
+            player2 = NormalizedPlayerRef("${id}b", "P$id B", "WTA"),
+        )
+        // one WTA semifinal that STARTED early, plus 100 later-starting ITF matches that would crowd out a global cap
+        val wta = match("wta", "WTA", base)
+        val itf = (1..100).map { match("itf$it", "ITF", base.plusSeconds(it * 60L)) }
+
+        val result = adapter.capRecent(itf + wta)
+
+        assertTrue(result.any { it.externalId == "wta" }, "main-tour match must be retained")
+        assertEquals(40, result.count { it.category == "ITF" }, "lower circuits are capped")
+        assertEquals(41, result.size)
+        assertEquals(result.sortedByDescending { it.startTime }, result, "result is newest-start first")
     }
 
     @Test

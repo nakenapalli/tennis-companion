@@ -3,11 +3,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 /**
- * Whether a circuit category/level counts as main tour. Matches are tagged "ATP"/"WTA"; tournaments may
- * be combined ("ATP & WTA"), so a substring check covers both. Challenger/ITF/Junior/UTR are excluded.
+ * Whether a circuit category/level counts as main tour. Matches are tagged "ATP"/"WTA"/"Grand Slam";
+ * tournaments may be combined ("ATP & WTA"), so a substring check covers both. Grand Slam counts as main
+ * tour (otherwise Slam matches/tournaments would be hidden). Challenger/ITF/Junior/UTR are excluded.
  */
 export function isMainTour(category?: string | null): boolean {
-  return !!category && (category.includes("ATP") || category.includes("WTA"));
+  return !!category && (category.includes("ATP") || category.includes("WTA") || category.includes("Grand Slam"));
 }
 
 interface PrefsValue {

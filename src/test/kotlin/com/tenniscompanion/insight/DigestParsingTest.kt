@@ -27,4 +27,20 @@ class DigestParsingTest {
         val body = "Aryna Sabalenka faces Naomi Osaka — a rematch worth watching."
         assertTrue(DigestParsing.ungroundedEntities(body, names).isEmpty())
     }
+
+    @Test
+    fun `verbatimOverlaps flags a copied run but not a paraphrase`() {
+        val src = "Carlos Alcaraz produced a stunning display of clay court tennis to overwhelm his opponent in straight sets today"
+        val copied = "In Paris, Carlos Alcaraz produced a stunning display of clay court tennis to overwhelm his opponent in straight sets."
+        val paraphrase = "Alcaraz looked excellent on the clay and beat his rival comfortably in Paris."
+        assertTrue(DigestParsing.verbatimOverlaps(copied, listOf(src)).isNotEmpty(), "copied phrasing should be flagged")
+        assertTrue(DigestParsing.verbatimOverlaps(paraphrase, listOf(src)).isEmpty(), "a paraphrase should pass")
+    }
+
+    @Test
+    fun `fabricatedCitations flags links to sources not supplied`() {
+        val allowed = setOf("https://example.com/a")
+        val body = "Alcaraz wins ([Tennis News](https://example.com/a)). Big upset ([Other](https://evil.com/x))."
+        assertEquals(listOf("https://evil.com/x"), DigestParsing.fabricatedCitations(body, allowed))
+    }
 }

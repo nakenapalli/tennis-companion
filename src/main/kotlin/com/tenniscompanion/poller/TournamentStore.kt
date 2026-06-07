@@ -2,6 +2,7 @@ package com.tenniscompanion.poller
 
 import com.tenniscompanion.api.TournamentView
 import com.tenniscompanion.integration.NormalizedTournament
+import com.tenniscompanion.integration.TournamentTierRegistry
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
@@ -10,6 +11,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
+import java.time.LocalDate
 
 @Repository
 class TournamentStore(
@@ -17,6 +19,7 @@ class TournamentStore(
     private val namedJdbc: NamedParameterJdbcTemplate,
     private val redis: StringRedisTemplate,
     private val mapper: ObjectMapper,
+    private val tiers: TournamentTierRegistry,
 ) {
     private val cacheTtl = Duration.ofHours(24)
 
@@ -49,9 +52,18 @@ class TournamentStore(
         redis.opsForValue().set(CURRENT_KEY, mapper.writeValueAsString(readCurrent(source)), cacheTtl)
     }
 
-    fun current(source: String): List<TournamentView> =
+    fun current(source: String): List<TournamentView> = sortByTier(
         redis.opsForValue().get(CURRENT_KEY)?.let { mapper.readValue(it, Array<TournamentView>::class.java).toList() }
-            ?: readCurrent(source)
+            ?: readCurrent(source),
+    )
+
+    /** Most important first (Grand Slam > Masters/1000 > 500 > 250 > Challenger > ITF), then soonest. */
+    private fun sortByTier(list: List<TournamentView>): List<TournamentView> =
+        list.sortedWith(
+            compareByDescending<TournamentView> { tiers.tierOf(it.name, it.level).weight }
+                .thenByDescending { it.startDate ?: LocalDate.MIN }
+                .thenBy { it.name },
+        )
 
     fun byId(id: Long): TournamentView? =
         jdbc.query("SELECT * FROM tournaments WHERE id = ?", ROW_MAPPER, id).firstOrNull()

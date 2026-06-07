@@ -34,6 +34,7 @@ dependencies {
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("tools.jackson.module:jackson-module-kotlin")
 	implementation("org.apache.commons:commons-csv:1.11.0") // parsing Sackmann CSVs in the loader
+	implementation("org.jsoup:jsoup:1.18.3") // scrape + extract article text for the digest news context
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
