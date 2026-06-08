@@ -89,6 +89,13 @@ app:
     max-age-days: ${NEWS_MAX_AGE_DAYS:8}
     per-article-char-cap: ${NEWS_PER_ARTICLE_CHAR_CAP:4000}
 
+  # Per-match live chat (cache-only). Threads/messages live in Redis with this TTL and are never persisted
+  # to Postgres; they lock when the match ends and purge ~1 day after the last message.
+  chat:
+    enabled: ${CHAT_ENABLED:true}
+    ttl: ${CHAT_TTL:1d}
+    active-window: ${CHAT_ACTIVE_WINDOW:15m}
+
   # Reconciliation. Tiers 0-2 run inline on the poll path; Tier 3 (LLM) is a scheduled batch over the
   # review queue (also triggerable via POST /api/admin/reconcile/tier3). Default daily 07:00 UTC, after
   # the morning rankings/tournament jobs populate the queue. Still no-ops unless app.llm is enabled + keyed.

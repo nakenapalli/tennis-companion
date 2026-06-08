@@ -30,7 +30,16 @@ class AdminBootstrap(
         val email = props.email.trim().lowercase()
         if (email.isBlank() || props.password.isBlank()) return
         if (users.existsByEmail(email)) return
-        users.save(User(email = email, passwordHash = encoder.encode(props.password)!!, isAdmin = true, createdAt = Instant.now()))
+        val username = email.substringBefore('@')
+        users.save(
+            User(
+                email = email,
+                username = if (users.existsByUsernameIgnoreCase(username)) "$username-admin" else username,
+                passwordHash = encoder.encode(props.password)!!,
+                isAdmin = true,
+                createdAt = Instant.now(),
+            ),
+        )
         log.info("Bootstrapped admin user: {}", email)
     }
 }

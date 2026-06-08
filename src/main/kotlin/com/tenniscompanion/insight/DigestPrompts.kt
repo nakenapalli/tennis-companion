@@ -27,9 +27,10 @@ Using the news articles (only when an <articles> block is provided):
 - Articles add colour the fact sheet lacks — stakes, storylines, streaks, context — and show the tone to write in.
 - NEVER copy or lightly reword an article. Write every sentence entirely in your own words; do not reuse
   any distinctive phrase from an article.
-- Any fact, claim, or storyline you draw from an article MUST be cited inline, right after the sentence,
-  as a markdown link to that article: ([Publication](url)) — or (Author, [Publication](url)). Use only a
-  publication and url that appear in the <articles> block; never cite a source that is not listed there.
+- Do NOT cite inline. Write the body cleanly, then END it with a single final line listing the sources you
+  drew on: "Sources: [Publication](url), [Publication](url)" — one markdown link per distinct article whose
+  information you used, using only publications and urls from the <articles> block. Omit the line entirely
+  if you used no article information.
 - Facts taken from the fact sheet need no citation.
 
 Accuracy (do not get these wrong):
@@ -60,8 +61,8 @@ Output format:
 - "title" is a plain, natural label of the week's content — e.g. "French Open: Round of 16 Results" or
   "This Week at the French Open". No more than ~8 words. Don't imply cause-and-effect, cram two ideas
   together, or use awkward phrasings.
-- "body_markdown" is the roundup as markdown using "## " section headings and "- " bullets, with any
-  article-sourced facts cited inline as markdown links."""
+- "body_markdown" is the roundup as markdown using "## " section headings and "- " bullets, ending — when
+  you used any article context — with a single "Sources:" line of markdown links (no inline citations)."""
 
     private const val USER_TEMPLATE = """Write this week's tennis roundup using only the facts below.
 
@@ -83,8 +84,8 @@ Respond with only the JSON object."""
 </articles>
 
 The fact sheet is authoritative for all scores, names, and records. You may use the articles for context
-and voice, but write everything in your own words and cite any article-sourced fact inline as a markdown
-link, e.g. ([Publication](url)). Respond with only the JSON object."""
+and voice, but write everything in your own words and do NOT cite inline — instead end the body with a
+single "Sources: [Publication](url), ..." line listing the articles you used. Respond with only the JSON object."""
 
     /** Fact-sheet-only prompt (no news available). */
     fun user(factSheetJson: String): String = USER_TEMPLATE.replace("{{FACT_SHEET_JSON}}", factSheetJson)

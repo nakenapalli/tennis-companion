@@ -9,6 +9,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -19,10 +20,14 @@ export default function LoginPage() {
     setError(null);
     try {
       if (mode === "login") await login(email, password);
-      else await register(email, password);
+      else await register(email, username, password);
       router.push("/");
     } catch {
-      setError(mode === "login" ? "Invalid credentials." : "Could not register (email may be taken, or password < 8 chars).");
+      setError(
+        mode === "login"
+          ? "Invalid credentials."
+          : "Could not register (email or username may be taken, password < 8 chars, or username not 3-20 letters/numbers/underscore).",
+      );
     } finally {
       setBusy(false);
     }
@@ -34,6 +39,17 @@ export default function LoginPage() {
       <p className="sub">Personalize your home screen and follow players.</p>
       <form className="form" onSubmit={submit}>
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        {mode === "register" && (
+          <input
+            type="text"
+            placeholder="Username (shown in chat)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            minLength={3}
+            maxLength={20}
+            required
+          />
+        )}
         <input
           type="password"
           placeholder="Password (at least 8 characters)"

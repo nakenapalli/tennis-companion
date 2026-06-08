@@ -16,6 +16,7 @@ class User(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null,
     val email: String,
+    val username: String? = null, // chat handle; unique (case-insensitive), required at registration
     val passwordHash: String,
     // explicit @Column avoids the Kotlin `is`-prefixed-boolean property/column mapping quirk
     @Column(name = "is_admin")
@@ -26,4 +27,5 @@ class User(
 interface UserRepository : JpaRepository<User, Long> {
     fun findByEmail(email: String): User?
     fun existsByEmail(email: String): Boolean
+    fun existsByUsernameIgnoreCase(username: String): Boolean
 }

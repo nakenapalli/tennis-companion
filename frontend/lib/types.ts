@@ -52,6 +52,7 @@ export interface LiveMatch {
   score?: { home?: SideScore; away?: SideScore } | null;
   startTime?: string;
   tier?: string; // GRAND_SLAM | FINALS | MASTERS_1000 | TOUR_500 | TOUR_250 | CHALLENGER | ITF | JUNIOR | OTHER
+  serve?: string; // "home" | "away" — who is currently serving (live only)
 }
 
 export interface SideScore {
@@ -90,7 +91,44 @@ export interface Favorite {
 export interface AuthResponse {
   token: string;
   email: string;
+  username?: string;
   admin: boolean;
+}
+
+/** A single match for the dedicated match view (LiveMatch + an approximate end time when finished). */
+export interface MatchDetail extends LiveMatch {
+  endedAt?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface ChatThreadSummary {
+  id: string;
+  title: string;
+  authorName: string;
+  createdAt: string;
+  messageCount: number;
+  activeChatters: number;
+}
+
+export interface ChatThreadDetail {
+  id: string;
+  title: string;
+  authorName: string;
+  createdAt: string;
+  messages: ChatMessage[];
+  locked: boolean;
+}
+
+export interface ThreadList {
+  active: ChatThreadSummary[];
+  latest: ChatThreadSummary[];
+  locked: boolean;
 }
 
 export interface Insight {

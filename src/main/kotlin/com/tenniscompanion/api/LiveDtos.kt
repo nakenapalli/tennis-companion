@@ -23,6 +23,8 @@ data class LiveMatchDto(
     val score: Map<String, Any?>?,
     val startTime: Instant?,
     val tier: String? = null, // TournamentTier name (GRAND_SLAM/MASTERS_1000/…); stamped on read for the UI badge
+    val serve: String? = null, // "home" | "away" — who is serving (live only)
+    val endedAt: Instant? = null, // approx finish time (last poll) — only set on the match-detail endpoint
 )
 
 data class RankingRowDto(

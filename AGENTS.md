@@ -56,6 +56,12 @@ sits just above OS env vars so values resolve reliably, below command-line args)
   later-started 250 match. The feed has **no slam marker or 250/500 size**, so tier comes from a curated
   `resources/tournament-tiers.json` (matched by name, accent/case-insensitive) with the feed `category` as
   fallback; juniors are classified first. Sorting is applied on read in `LiveDataStore`/`TournamentStore`.
+- **Match view + live chat:** a score card opens `/matches/{externalId}` (detail header — flags, rank, serve,
+  approx elapsed/duration). Below it a **cache-only** chat (`chat/ChatStore`: Redis hashes/lists/zsets, 1-day
+  TTL, **never** persisted to Postgres): threads + messages, real-time over **SSE** (`chat/ChatEventHub` —
+  public read streams since `EventSource` can't send auth headers; POSTs are authenticated). Threads **lock**
+  when the match is finished. Chat authors are **usernames** (`users.username`, set at registration). This is
+  the one place the app uses SSE (everything else is REST + SWR polling).
 - **Reconciliation never blocks serving:** unmapped players fall back to the upstream display name; the hard
   residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`) classifies
   that queue against a rebuilt candidate set — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`)
@@ -63,8 +69,8 @@ sits just above OS env vars so values resolve reliably, below command-line args)
 - **The LLM is grounded only:** it writes narrative around a DB-built fact sheet (the authoritative spine
   for scores/names), never from its own memory. It blends in **scraped full-text tennis news**
   (`NewsSource`/`ScrapedNewsSource` + a per-site `SiteScraper`, e.g. `TennisDotComScraper`) for cited
-  context + voice — articles are used **transiently and never persisted**, any article-sourced fact is
-  **cited inline**, and an **anti-plagiarism** check (`DigestParsing.verbatimOverlaps`) blocks copied
+  context + voice — articles are used **transiently and never persisted**, the sources used are listed in a
+  trailing **Sources** line (not inline), and an **anti-plagiarism** check (`DigestParsing.verbatimOverlaps`) blocks copied
   phrasing. After generation an LLM **fact-check** (`FactCheckPrompts`) verifies the hard facts against the
   fact sheet; the job **auto-publishes only if the fact-check is clean**, else leaves a `DRAFT`. The
   published digest is **embedded on the home page** (no separate tab); if nothing is published the home

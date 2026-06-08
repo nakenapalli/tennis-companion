@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 
-data class RegisterRequest(val email: String, val password: String)
+data class RegisterRequest(val email: String, val username: String, val password: String)
 data class LoginRequest(val email: String, val password: String)
-data class AuthResponse(val token: String, val email: String, val admin: Boolean)
+data class AuthResponse(val token: String, val email: String, val username: String?, val admin: Boolean)
 
 @RestController
 @RequestMapping("/api/auth")
@@ -26,14 +26,19 @@ class AuthController(
     @PostMapping("/register")
     fun register(@RequestBody req: RegisterRequest): AuthResponse {
         val email = req.email.trim().lowercase()
+        val username = req.username.trim()
         if (email.isBlank() || req.password.length < 8) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "email required and password must be >= 8 chars")
         }
+        if (!username.matches(USERNAME_RE)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "username must be 3-20 chars: letters, numbers, underscore")
+        }
         if (users.existsByEmail(email)) throw ResponseStatusException(HttpStatus.CONFLICT, "email already registered")
+        if (users.existsByUsernameIgnoreCase(username)) throw ResponseStatusException(HttpStatus.CONFLICT, "username already taken")
         val user = users.save(
-            User(email = email, passwordHash = passwordEncoder.encode(req.password)!!, createdAt = Instant.now()),
+            User(email = email, username = username, passwordHash = passwordEncoder.encode(req.password)!!, createdAt = Instant.now()),
         )
-        return AuthResponse(jwt.issue(user), user.email, user.isAdmin)
+        return AuthResponse(jwt.issue(user), user.email, user.username, user.isAdmin)
     }
 
     @PostMapping("/login")
@@ -42,6 +47,10 @@ class AuthController(
         if (user == null || !passwordEncoder.matches(req.password, user.passwordHash)) {
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid credentials")
         }
-        return AuthResponse(jwt.issue(user), user.email, user.isAdmin)
+        return AuthResponse(jwt.issue(user), user.email, user.username, user.isAdmin)
+    }
+
+    companion object {
+        private val USERNAME_RE = Regex("^[A-Za-z0-9_]{3,20}$")
     }
 }

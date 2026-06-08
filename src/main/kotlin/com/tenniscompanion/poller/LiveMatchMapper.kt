@@ -28,6 +28,7 @@ class LiveMatchMapper(private val reconciliation: ReconciliationService) {
         player2 = side(source, m.player2),
         score = m.score,
         startTime = m.startTime,
+        serve = m.serve,
     )
 
     private fun side(source: String, p: NormalizedPlayerRef): PlayerSideDto {

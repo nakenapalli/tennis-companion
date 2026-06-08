@@ -103,7 +103,16 @@ class ApiTennisAdapter(
             player2 = NormalizedPlayerRef(externalId = f.secondPlayerKey ?: "", name = f.secondPlayer ?: "", tour = tour),
             score = scoreMap(f),
             startTime = startInstant(f),
+            serve = if (statusOf(f) == "live") serveSide(f.serve) else null,
         )
+    }
+
+    /** event_serve is "First Player"/"Second Player"; normalize to the home/away side (null if absent). */
+    internal fun serveSide(serve: String?): String? = when {
+        serve.isNullOrBlank() -> null
+        serve.contains("first", ignoreCase = true) -> "home"
+        serve.contains("second", ignoreCase = true) -> "away"
+        else -> null
     }
 
     internal fun toRanking(s: StandingDto, tour: String): NormalizedRanking? {

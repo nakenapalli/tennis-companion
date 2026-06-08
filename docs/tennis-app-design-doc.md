@@ -12,7 +12,7 @@ This spec has now been implemented through **Phase 6b**. The doc below has been 
 - **Spring Boot 4.0.x** (→ Spring Framework 7, Jackson 3 `tools.jackson.*`; JSON annotations still `com.fasterxml.jackson.annotation`), JVM 21, Gradle Kotlin DSL. Frontend is **Next.js 16** (App Router) + TypeScript + SWR.
 - **LLM = Anthropic Claude** via the Messages API behind `LlmClient`: **Sonnet** (`claude-sonnet-4-6`) for the digest, **Haiku** (`claude-haiku-4-5`) reserved for Tier‑3.
 - **Player‑id namespacing:** ATP and WTA Sackmann ids collide, so the canonical `player_id` is **ATP = raw id, WTA = raw id + 1,000,000,000**.
-- **Scheduled polling is ON by default** (the big quota made on‑demand‑only unnecessary); live poll runs at a fixed 60s interval (configurable). **Adaptive cadence and SSE are deferred.** Reads use REST + SWR polling.
+- **Scheduled polling is ON by default** (the big quota made on‑demand‑only unnecessary); live poll runs at a fixed 60s interval (configurable). **Adaptive cadence is deferred.** Reads use REST + SWR polling — *except* the per‑match live chat, which streams over **SSE** (`chat/ChatEventHub`); scores are still poll‑based.
 - **Done:** Phases 0–5, the provider swap, **Phase 6a** (weekly AI digest backend + serving + admin publish), and **Phase 6b** — reconciliation **Tier 3** (an offline, admin-triggered LLM classifier over the review queue) and the **frontend digest page** (`/insights`). **Pending:** Phase 7 polish.
 
 The original spec text follows, lightly amended where it would otherwise be misleading.

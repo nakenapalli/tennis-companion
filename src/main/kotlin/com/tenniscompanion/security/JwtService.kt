@@ -25,6 +25,7 @@ class JwtService(private val encoder: JwtEncoder) {
             .issuedAt(now)
             .expiresAt(now.plus(Duration.ofHours(12)))
             .claim("email", user.email)
+            .claim("username", user.username ?: "")
             .claim("roles", roles)
             .build()
         val header = JwsHeader.with(MacAlgorithm.HS256).build()

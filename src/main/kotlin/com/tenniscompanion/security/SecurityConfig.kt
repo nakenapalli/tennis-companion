@@ -80,6 +80,8 @@ class SecurityConfig(
                         HttpMethod.GET,
                         "/api/players/**", "/api/scores/**", "/api/rankings", "/api/tournaments/**", "/api/insights/**",
                     ).permitAll()
+                    // match detail + chat reads (incl. SSE streams) are public; chat POSTs fall through to authenticated
+                    .requestMatchers(HttpMethod.GET, "/api/matches/**").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .requestMatchers("/api/me/**").authenticated()
                     .anyRequest().authenticated()

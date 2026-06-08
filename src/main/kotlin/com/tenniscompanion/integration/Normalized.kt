@@ -30,6 +30,7 @@ data class NormalizedMatch(
     val player2: NormalizedPlayerRef,
     val score: Map<String, Any?>? = null,
     val startTime: Instant? = null,
+    val serve: String? = null, // "home" | "away" — who is serving (live only); null otherwise
 )
 
 data class NormalizedRanking(

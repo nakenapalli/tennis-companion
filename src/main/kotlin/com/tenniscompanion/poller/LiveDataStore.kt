@@ -86,13 +86,63 @@ class LiveDataStore(
     /** Order by importance (Grand Slam > tour > Challenger > …, late rounds first), then recency — so the
      *  most significant match leads regardless of when it started. Applied on read so it's consistent
      *  whether served from Redis or the Postgres fallback. */
-    private fun weightedSort(matches: List<LiveMatchDto>): List<LiveMatchDto> =
-        matches
-            .map { it.copy(tier = weighting.tierOf(it.tournamentName, it.category).name) } // stamp tier for the UI badge
+    private fun weightedSort(matches: List<LiveMatchDto>): List<LiveMatchDto> {
+        val ranks = rankByPlayerId() // current ATP/WTA ranks for the UI (the live feed doesn't carry them)
+        return matches
+            .map {
+                it.copy(
+                    tier = weighting.tierOf(it.tournamentName, it.category).name,
+                    player1 = it.player1.copy(rank = it.player1.rank ?: it.player1.playerId?.let { id -> ranks[id] }),
+                    player2 = it.player2.copy(rank = it.player2.rank ?: it.player2.playerId?.let { id -> ranks[id] }),
+                )
+            }
             .sortedWith(
                 compareByDescending<LiveMatchDto> { weighting.weight(it.tournamentName, it.category, it.round) }
                     .thenByDescending { it.startTime ?: Instant.MIN },
             )
+    }
+
+    /** player_id → current rank, from the latest cached ATP/WTA rankings (namespaced ids don't collide). */
+    private fun rankByPlayerId(): Map<Long, Int> {
+        val map = HashMap<Long, Int>()
+        for (tour in listOf("ATP", "WTA")) {
+            for (r in rankings(tour, 500)) r.playerId?.let { map[it] = r.rank }
+        }
+        return map
+    }
+
+    // --- single match (dedicated match view) ---
+
+    private fun find(source: String, externalId: String): LiveMatchDto? =
+        (liveMatches(source).asSequence() + recentMatches(source).asSequence()).firstOrNull { it.externalId == externalId }
+
+    /** Status for the given match (cheap), or null if we don't know it — used to lock chat when finished. */
+    fun matchStatus(source: String, externalId: String): String? = find(source, externalId)?.status
+
+    /** The match enriched for the detail view: country stamped for both players + an approx endedAt when finished. */
+    fun matchDetail(source: String, externalId: String): LiveMatchDto? {
+        val m = find(source, externalId) ?: return null
+        val ids = listOfNotNull(m.player1.playerId, m.player2.playerId)
+        val countries = if (ids.isEmpty()) emptyMap() else countryByIds(ids)
+        return m.copy(
+            player1 = m.player1.copy(country = m.player1.country ?: m.player1.playerId?.let { countries[it] }),
+            player2 = m.player2.copy(country = m.player2.country ?: m.player2.playerId?.let { countries[it] }),
+            endedAt = if (m.status == "finished") lastPolledAt(source, externalId) else null,
+        )
+    }
+
+    private fun countryByIds(ids: List<Long>): Map<Long, String> =
+        namedJdbc.query(
+            "SELECT player_id, country_code FROM players WHERE player_id IN (:ids) AND country_code IS NOT NULL",
+            MapSqlParameterSource("ids", ids),
+        ) { rs, _ -> rs.getLong("player_id") to rs.getString("country_code") }.toMap()
+
+    private fun lastPolledAt(source: String, externalId: String): Instant? =
+        jdbc.query(
+            "SELECT last_polled_at FROM live_matches WHERE source = ? AND external_id = ?",
+            { rs, _ -> rs.getTimestamp("last_polled_at")?.toInstant() },
+            source, externalId,
+        ).firstOrNull()
 
     private fun readMatches(source: String, status: String, since: Instant?): List<LiveMatchDto> {
         val sql = StringBuilder(
