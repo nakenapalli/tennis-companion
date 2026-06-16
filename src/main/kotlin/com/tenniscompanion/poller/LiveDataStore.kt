@@ -56,17 +56,17 @@ class LiveDataStore(
     private fun upsertMatch(source: String, m: LiveMatchDto) {
         jdbc.update(
             """
-            INSERT INTO live_matches(source, external_id, status, round, surface, tour, category, tournament_name,
+            INSERT INTO live_matches(source, external_id, status, round, surface, tour, category, qualifying, tournament_name,
                                      player1_name, player2_name, player1_id, player2_id, score, start_time, last_polled_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?::bigint,?::bigint,?::jsonb,?, now())
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?::bigint,?::bigint,?::jsonb,?, now())
             ON CONFLICT (source, external_id) DO UPDATE SET
               status=EXCLUDED.status, round=EXCLUDED.round, surface=EXCLUDED.surface, tour=EXCLUDED.tour,
-              category=EXCLUDED.category, tournament_name=EXCLUDED.tournament_name,
+              category=EXCLUDED.category, qualifying=EXCLUDED.qualifying, tournament_name=EXCLUDED.tournament_name,
               player1_name=EXCLUDED.player1_name, player2_name=EXCLUDED.player2_name,
               player1_id=EXCLUDED.player1_id, player2_id=EXCLUDED.player2_id, score=EXCLUDED.score,
               start_time=EXCLUDED.start_time, last_polled_at=now()
             """.trimIndent(),
-            source, m.externalId, m.status, m.round, m.surface, m.tour, m.category, m.tournamentName,
+            source, m.externalId, m.status, m.round, m.surface, m.tour, m.category, m.qualifying, m.tournamentName,
             m.player1.name, m.player2.name, m.player1.playerId, m.player2.playerId,
             m.score?.let { mapper.writeValueAsString(it) }, m.startTime?.atOffset(ZoneOffset.UTC),
         )
@@ -97,7 +97,7 @@ class LiveDataStore(
                 )
             }
             .sortedWith(
-                compareByDescending<LiveMatchDto> { weighting.weight(it.tournamentName, it.category, it.round) }
+                compareByDescending<LiveMatchDto> { weighting.weight(it.tournamentName, it.category, it.round, it.qualifying) }
                     .thenByDescending { it.startTime ?: Instant.MIN },
             )
     }
@@ -147,7 +147,7 @@ class LiveDataStore(
     private fun readMatches(source: String, status: String, since: Instant?): List<LiveMatchDto> {
         val sql = StringBuilder(
             """
-            SELECT external_id, status, tournament_name, round, surface, tour, category,
+            SELECT external_id, status, tournament_name, round, surface, tour, category, qualifying,
                    player1_name, player2_name, player1_id, player2_id, score::text AS score_json, start_time
             FROM live_matches WHERE source = ? AND status = ?
             """.trimIndent(),
@@ -164,6 +164,7 @@ class LiveDataStore(
                 surface = rs.getString("surface"),
                 tour = rs.getString("tour"),
                 category = rs.getString("category"),
+                qualifying = rs.getBoolean("qualifying"),
                 player1 = PlayerSideDto(rs.getString("player1_name"), rs.getObject("player1_id") as? Long, null, null),
                 player2 = PlayerSideDto(rs.getString("player2_name"), rs.getObject("player2_id") as? Long, null, null),
                 score = rs.getString("score_json")?.let { mapper.readValue(it, Map::class.java) as Map<String, Any?> },

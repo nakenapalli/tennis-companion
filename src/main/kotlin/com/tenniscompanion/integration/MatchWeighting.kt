@@ -91,8 +91,16 @@ class TournamentTierRegistry(mapper: ObjectMapper) {
 @Component
 class MatchWeighting(private val tiers: TournamentTierRegistry) {
 
-    fun weight(tournamentName: String?, category: String?, round: String?): Int =
-        tiers.tierOf(tournamentName, category).weight + roundBonus(round)
+    /**
+     * Qualifying matches reuse main-draw round names ("Final", "Semi-finals") in the feed, so they get
+     * NO round bonus and a small demotion instead — large enough to sit below the lowest main-draw match
+     * of the same tier (round bonus 0–50), small enough to stay within the tier band (above the next
+     * tier down, whose gaps are ≥100 at every tier that actually has a qualifying draw).
+     */
+    fun weight(tournamentName: String?, category: String?, round: String?, qualifying: Boolean = false): Int {
+        val tier = tiers.tierOf(tournamentName, category).weight
+        return if (qualifying) tier - QUALIFYING_DEMOTION else tier + roundBonus(round)
+    }
 
     /** The resolved tier (for the UI badge). */
     fun tierOf(tournamentName: String?, category: String?): TournamentTier = tiers.tierOf(tournamentName, category)
@@ -101,11 +109,15 @@ class MatchWeighting(private val tiers: TournamentTierRegistry) {
     fun roundBonus(round: String?): Int {
         val r = round?.substringAfterLast(" - ")?.lowercase()?.trim() ?: return 0
         return when {
+            r == "final" || r == "finals" -> 50 // exact: the feed names early rounds "1/8-finals", "1/16-finals", … which all *contain* "final"
             r.contains("semi") || r.contains("1/2") -> 40
             r.contains("quarter") || r.contains("1/4") -> 30
             r.contains("round of 16") || r.contains("last 16") || r.contains("1/8") -> 20
-            r.contains("final") -> 50 // checked after semi/quarter, which also contain "final"
             else -> 0
         }
+    }
+
+    private companion object {
+        const val QUALIFYING_DEMOTION = 10
     }
 }

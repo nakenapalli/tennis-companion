@@ -29,6 +29,7 @@ data class FixtureDto(
     @JsonProperty("event_winner") val winner: String? = null,
     @JsonProperty("event_status") val status: String? = null,
     @JsonProperty("event_type_type") val eventTypeType: String? = null,
+    @JsonProperty("event_qualification") val qualification: String? = null, // "True"/"False" (sometimes blank) — the only qualifying-draw marker
     @JsonProperty("tournament_name") val tournamentName: String? = null,
     @JsonProperty("tournament_key") val tournamentKey: String? = null,
     @JsonProperty("tournament_round") val tournamentRound: String? = null,

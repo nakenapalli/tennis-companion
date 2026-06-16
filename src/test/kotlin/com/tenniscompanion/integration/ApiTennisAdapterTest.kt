@@ -77,6 +77,50 @@ class ApiTennisAdapterTest {
     }
 
     @Test
+    fun `qualifying flag comes from event_qualification`() {
+        assertTrue(adapter.isQualifying("True"))
+        assertTrue(adapter.isQualifying("true"))
+        assertFalse(adapter.isQualifying("False"))
+        assertFalse(adapter.isQualifying(""))
+        assertFalse(adapter.isQualifying(null))
+        // the qualifying final reuses the main-draw round name — only the flag distinguishes it
+        val qualFinal = FixtureDto(
+            eventKey = "12136561", eventTypeType = "Wta Singles", live = "0", winner = "Second Player",
+            tournamentName = "Berlin", tournamentRound = "WTA Berlin - Final", qualification = "True",
+        )
+        assertTrue(adapter.toMatch(qualFinal)!!.qualifying)
+        assertFalse(adapter.toMatch(qualFinal.copy(qualification = "False"))!!.qualifying)
+    }
+
+    @Test
+    fun `normalizeRound rewrites fraction rounds, keeps the prefix, leaves other rounds alone`() {
+        // 1/N-finals -> round of 2N, preserving the "Event - " prefix
+        assertEquals("WTA Berlin - Round of 32", adapter.normalizeRound("WTA Berlin - 1/16-finals"))
+        assertEquals("WTA Berlin - Round of 64", adapter.normalizeRound("WTA Berlin - 1/32-finals"))
+        assertEquals("ATP Halle - Round of 16", adapter.normalizeRound("ATP Halle - 1/8-finals"))
+        assertEquals("Foo - Round of 128", adapter.normalizeRound("Foo - 1/64-finals"))
+        // small denominators keep their established names
+        assertEquals("Foo - Quarter-finals", adapter.normalizeRound("Foo - 1/4-finals"))
+        assertEquals("Foo - Semi-finals", adapter.normalizeRound("Foo - 1/2-finals"))
+        // already-named and non-power-of-two / junk rounds are untouched
+        assertEquals("WTA Berlin - Final", adapter.normalizeRound("WTA Berlin - Final"))
+        assertEquals("WTA Berlin - Semi-finals", adapter.normalizeRound("WTA Berlin - Semi-finals"))
+        assertEquals("Foo - 1/3-finals", adapter.normalizeRound("Foo - 1/3-finals")) // 3 is not a power of two
+        assertEquals("Foo - 1/6-finals", adapter.normalizeRound("Foo - 1/6-finals"))
+        // no " - " prefix: convert the whole token
+        assertEquals("Round of 32", adapter.normalizeRound("1/16-finals"))
+    }
+
+    @Test
+    fun `toMatch standardizes a fraction round name`() {
+        val f = FixtureDto(
+            eventKey = "12136557", eventTypeType = "Wta Singles", live = "0", winner = "First Player",
+            tournamentName = "Berlin", tournamentRound = "WTA Berlin - 1/16-finals",
+        )
+        assertEquals("WTA Berlin - Round of 32", adapter.toMatch(f)!!.round)
+    }
+
+    @Test
     fun `games() takes the integer part so tiebreak sets are not dropped`() {
         // api-tennis encodes a tiebreak set as "games.tiebreakPoints": 7-6(5) -> "7.7"/"6.5".
         assertEquals(7, adapter.games("7.7"))

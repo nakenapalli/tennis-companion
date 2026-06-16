@@ -18,6 +18,7 @@ data class LiveMatchDto(
     val surface: String?,
     val tour: String?,
     val category: String?, // circuit (ATP/WTA/Challenger/ITF/...) — the UI filters to main tour by default
+    val qualifying: Boolean = false, // qualifying-draw match — no round bonus, ranks below main draw, labeled in the UI
     val player1: PlayerSideDto,
     val player2: PlayerSideDto,
     val score: Map<String, Any?>?,

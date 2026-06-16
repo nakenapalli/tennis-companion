@@ -23,6 +23,7 @@ export function MatchHeader({ m }: { m: MatchDetail }) {
         <span className="match-meta">
           {m.tournamentName && <span className="tag">{m.tournamentName}</span>}
           <TierBadge tier={m.tier} tour={m.tour} detailed />
+          {m.qualifying && <span className="tag tag-qual">Qualifying</span>}
           {round && <span className="tag">{round}</span>}
           {elapsed && <span className="tag">⏱ {elapsed}</span>}
         </span>

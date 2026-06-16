@@ -24,6 +24,7 @@ class LiveMatchMapper(private val reconciliation: ReconciliationService) {
         surface = m.surface,
         tour = m.tour,
         category = m.category,
+        qualifying = m.qualifying,
         player1 = side(source, m.player1),
         player2 = side(source, m.player2),
         score = m.score,

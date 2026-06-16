@@ -26,6 +26,7 @@ data class NormalizedMatch(
     val surface: String? = null,
     val tour: String? = null,
     val category: String? = null, // circuit: ATP | WTA | Challenger | ITF | ... (for main-tour filtering)
+    val qualifying: Boolean = false, // a qualifying-draw match (feed reuses main-draw round names for these)
     val player1: NormalizedPlayerRef,
     val player2: NormalizedPlayerRef,
     val score: Map<String, Any?>? = null,

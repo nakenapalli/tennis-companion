@@ -47,6 +47,7 @@ export interface LiveMatch {
   surface?: string;
   tour?: string;
   category?: string; // ATP | WTA | Challenger | ITF | Junior | ...
+  qualifying?: boolean; // qualifying-draw match — feed reuses main-draw round names, so this is the only marker
   player1: PlayerSide;
   player2: PlayerSide;
   score?: { home?: SideScore; away?: SideScore } | null;

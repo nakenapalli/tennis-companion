@@ -95,10 +95,11 @@ class ApiTennisAdapter(
             status = statusOf(f),
             tournamentExternalId = f.tournamentKey,
             tournamentName = f.tournamentName,
-            round = f.tournamentRound?.ifBlank { null },
+            round = f.tournamentRound?.ifBlank { null }?.let(::normalizeRound),
             surface = null, // not provided by this feed
             tour = tour,
             category = categoryOf(f.eventTypeType),
+            qualifying = isQualifying(f.qualification),
             player1 = NormalizedPlayerRef(externalId = f.firstPlayerKey ?: "", name = f.firstPlayer ?: "", tour = tour),
             player2 = NormalizedPlayerRef(externalId = f.secondPlayerKey ?: "", name = f.secondPlayer ?: "", tour = tour),
             score = scoreMap(f),
@@ -161,6 +162,46 @@ class ApiTennisAdapter(
     }
 
     internal fun isSingles(f: FixtureDto): Boolean = f.eventTypeType?.contains("Singles", ignoreCase = true) ?: false
+
+    /**
+     * Whether a fixture is a qualifying-draw match. The feed reuses main-draw round names ("Final",
+     * "Semi-finals") for the qualifying draw, so `event_qualification` ("True"/"False", sometimes blank)
+     * is the only thing that distinguishes a qualifying final from the real tournament final.
+     */
+    internal fun isQualifying(flag: String?): Boolean = flag.equals("true", ignoreCase = true)
+
+    /**
+     * Standardizes the feed's fraction-style round names to the conventional form. api-tennis emits early
+     * rounds as "1/N-finals" (a "Nth-finals" / French-style label); we rewrite the round token after the
+     * last " - " (so the "WTA Berlin - " prefix is preserved) while leaving already-named rounds and any
+     * unrecognized strings untouched. See [formalRoundName] for the mapping.
+     */
+    internal fun normalizeRound(round: String): String {
+        val sep = " - "
+        val idx = round.lastIndexOf(sep)
+        val token = if (idx >= 0) round.substring(idx + sep.length) else round
+        val formal = formalRoundName(token) ?: return round
+        return if (idx >= 0) round.substring(0, idx + sep.length) + formal else formal
+    }
+
+    /**
+     * "1/N-finals" → its conventional name, for a *valid* round only: numerator 1 and a power-of-two
+     * denominator. The denominator is half the field, so 1/N-finals is the round of 2N — e.g. 1/16-finals
+     * → "Round of 32", 1/8-finals → "Round of 16". The small ones keep their established names
+     * (1/4 → Quarter-finals, 1/2 → Semi-finals, 1/1 → Final). Returns null for anything that isn't a valid
+     * fraction round (already-named rounds, non-power-of-two denominators, junk) so the caller leaves it as-is.
+     */
+    internal fun formalRoundName(token: String): String? {
+        val m = FRACTION_ROUND.matchEntire(token.trim()) ?: return null
+        val denom = m.groupValues[1].toIntOrNull() ?: return null
+        if (denom < 1 || (denom and (denom - 1)) != 0) return null // denominator must be a power of two
+        return when (val players = denom * 2) {
+            2 -> "Final"
+            4 -> "Semi-finals"
+            8 -> "Quarter-finals"
+            else -> "Round of $players"
+        }
+    }
 
     internal fun tourOf(eventType: String?): String =
         if (eventType != null && (eventType.contains("WTA", true) || eventType.contains("Women", true))) "WTA" else "ATP"
@@ -240,5 +281,8 @@ class ApiTennisAdapter(
 
     private companion object {
         const val RECENT_LOWER_CAP = 40 // lower-circuit results kept per refresh; main tour is uncapped
+
+        // "1/16-finals", "1/8 Finals", etc. — the denominator is captured; separators/case are lenient.
+        val FRACTION_ROUND = Regex("^1/(\\d+)[\\s-]*finals?$", RegexOption.IGNORE_CASE)
     }
 }
