@@ -26,17 +26,16 @@ class TournamentStore(
     /**
      * Replace this source's tournaments with the freshly synced set (delete rows no longer present —
      * e.g. ended events or old per-draw keys now collapsed by name), upsert, then refresh the cache.
+     * A completely empty list is treated as a signal that the upstream call failed or returned nothing
+     * useful, so we skip the wipe — the DB date filter in [readCurrent] already prunes expired rows.
      */
     fun upsert(source: String, tournaments: List<NormalizedTournament>) {
+        if (tournaments.isEmpty()) return
         val ids = tournaments.map { it.externalId }
-        if (ids.isEmpty()) {
-            jdbc.update("DELETE FROM tournaments WHERE source = ?", source)
-        } else {
-            namedJdbc.update(
-                "DELETE FROM tournaments WHERE source = :src AND external_id NOT IN (:ids)",
-                MapSqlParameterSource().addValue("src", source).addValue("ids", ids),
-            )
-        }
+        namedJdbc.update(
+            "DELETE FROM tournaments WHERE source = :src AND external_id NOT IN (:ids)",
+            MapSqlParameterSource().addValue("src", source).addValue("ids", ids),
+        )
         for (t in tournaments) {
             jdbc.update(
                 """
@@ -53,7 +52,9 @@ class TournamentStore(
     }
 
     fun current(source: String): List<TournamentView> = sortByTier(
-        redis.opsForValue().get(CURRENT_KEY)?.let { mapper.readValue(it, Array<TournamentView>::class.java).toList() }
+        redis.opsForValue().get(CURRENT_KEY)
+            ?.let { mapper.readValue(it, Array<TournamentView>::class.java).toList() }
+            ?.takeIf { it.isNotEmpty() }
             ?: readCurrent(source),
     )
 
