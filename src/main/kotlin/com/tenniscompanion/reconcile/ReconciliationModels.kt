@@ -1,6 +1,7 @@
 package com.tenniscompanion.reconcile
 
 import org.springframework.boot.context.properties.ConfigurationProperties
+import java.util.UUID
 
 /** The upstream player to resolve, plus whatever distinguishing signals the provider supplied. */
 data class ReconciliationRequest(
@@ -21,7 +22,7 @@ enum class ReconciliationTier { CACHE, DETERMINISTIC, RULES, LLM, UNRESOLVED }
  * queue (unmapped) and serving must fall back to the upstream display name (design §6.4).
  */
 data class ReconciliationResult(
-    val playerId: Long?,
+    val playerId: UUID?,
     val tier: ReconciliationTier,
     val confidence: Double,
     val confirmed: Boolean,

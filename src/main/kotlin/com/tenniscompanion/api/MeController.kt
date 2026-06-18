@@ -12,8 +12,9 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
-data class AddFavoriteRequest(val playerId: Long)
+data class AddFavoriteRequest(val playerId: UUID)
 
 /** The authenticated user's personalization. `uid` comes from the JWT subject. */
 @RestController
@@ -39,7 +40,7 @@ class MeController(private val store: UserPrefsStore) {
     }
 
     @DeleteMapping("/favorites/{playerId}")
-    fun removeFavorite(@AuthenticationPrincipal jwt: Jwt, @PathVariable playerId: Long): Map<String, Any> {
+    fun removeFavorite(@AuthenticationPrincipal jwt: Jwt, @PathVariable playerId: UUID): Map<String, Any> {
         store.removeFavorite(uid(jwt), playerId)
         return mapOf("removed" to playerId)
     }

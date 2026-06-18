@@ -1,11 +1,12 @@
 package com.tenniscompanion.api
 
 import java.time.Instant
+import java.util.UUID
 
-/** Player side of a live match. `playerId` is the canonical Sackmann id (null until reconciled). */
+/** Player side of a live match. `playerId` is the canonical UUID (null until reconciled). */
 data class PlayerSideDto(
     val name: String,
-    val playerId: Long?,
+    val playerId: UUID?,
     val country: String?,
     val rank: Int?,
 )
@@ -30,7 +31,7 @@ data class LiveMatchDto(
 
 data class RankingRowDto(
     val rank: Int,
-    val playerId: Long?,
+    val playerId: UUID?,
     val name: String,
     val country: String?,
     val points: Int?,

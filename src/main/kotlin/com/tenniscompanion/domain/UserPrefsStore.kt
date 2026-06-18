@@ -3,8 +3,9 @@ package com.tenniscompanion.domain
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
+import java.util.UUID
 
-data class FavoriteDto(val playerId: Long, val firstName: String?, val lastName: String?, val tour: String?)
+data class FavoriteDto(val playerId: UUID, val firstName: String?, val lastName: String?, val tour: String?)
 
 /** Home-screen config (JSONB) + favorites for a user. Plain JDBC. */
 @Repository
@@ -33,19 +34,19 @@ class UserPrefsStore(private val jdbc: JdbcTemplate, private val mapper: ObjectM
     fun favorites(userId: Long): List<FavoriteDto> = jdbc.query(
         """
         SELECT f.player_id, p.first_name, p.last_name, p.tour
-        FROM user_favorites f LEFT JOIN players p ON p.player_id = f.player_id
+        FROM user_favorites f LEFT JOIN players p ON p.id = f.player_id
         WHERE f.user_id = ?
         ORDER BY p.last_name NULLS LAST
         """.trimIndent(),
-        { rs, _ -> FavoriteDto(rs.getLong("player_id"), rs.getString("first_name"), rs.getString("last_name"), rs.getString("tour")) },
+        { rs, _ -> FavoriteDto(rs.getObject("player_id", UUID::class.java), rs.getString("first_name"), rs.getString("last_name"), rs.getString("tour")) },
         userId,
     )
 
-    fun addFavorite(userId: Long, playerId: Long) {
-        jdbc.update("INSERT INTO user_favorites(user_id, player_id) VALUES (?, ?) ON CONFLICT DO NOTHING", userId, playerId)
+    fun addFavorite(userId: Long, playerId: UUID) {
+        jdbc.update("INSERT INTO user_favorites(user_id, player_id) VALUES (?, ?::uuid) ON CONFLICT DO NOTHING", userId, playerId.toString())
     }
 
-    fun removeFavorite(userId: Long, playerId: Long) {
-        jdbc.update("DELETE FROM user_favorites WHERE user_id = ? AND player_id = ?", userId, playerId)
+    fun removeFavorite(userId: Long, playerId: UUID) {
+        jdbc.update("DELETE FROM user_favorites WHERE user_id = ? AND player_id = ?::uuid", userId, playerId.toString())
     }
 }

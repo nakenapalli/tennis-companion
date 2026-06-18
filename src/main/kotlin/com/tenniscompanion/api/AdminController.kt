@@ -1,6 +1,8 @@
 package com.tenniscompanion.api
 
 import com.tenniscompanion.config.NewsProperties
+import com.tenniscompanion.enrichment.EnrichmentJob
+import com.tenniscompanion.enrichment.EnrichmentSummary
 import com.tenniscompanion.insight.DigestStore
 import com.tenniscompanion.insight.NewsSource
 import com.tenniscompanion.insight.SiteScraper
@@ -17,6 +19,7 @@ import com.tenniscompanion.reconcile.Tier3ReconciliationJob
 import com.tenniscompanion.reconcile.Tier3Summary
 import com.tenniscompanion.reconcile.UnmappedEntity
 import org.springframework.web.bind.annotation.GetMapping
+import java.util.UUID
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -24,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-data class ConfirmMappingRequest(val source: String, val externalPlayerId: String, val playerId: Long)
+data class ConfirmMappingRequest(val source: String, val externalPlayerId: String, val playerId: UUID)
 
 /**
  * Admin: reconciliation review queue + on-demand poll triggers (the free tier is ~50 req/day, so we
@@ -41,6 +44,7 @@ class AdminController(
     private val recentScoresJob: RecentScoresJob,
     private val weeklyDigestJob: WeeklyDigestJob,
     private val digestStore: DigestStore,
+    private val enrichmentJob: EnrichmentJob,
     private val news: NewsSource,
     private val newsProps: NewsProperties,
     private val scrapers: List<SiteScraper>,
@@ -72,6 +76,10 @@ class AdminController(
 
     @PostMapping("/poll/recent")
     fun pollRecent(): Map<String, Any> = mapOf("polledRecent" to recentScoresJob.sync())
+
+    @PostMapping("/enrichment/run")
+    fun runEnrichment(@RequestParam(defaultValue = "50") limit: Int): EnrichmentSummary =
+        enrichmentJob.run(limit.coerceIn(1, 200))
 
     // --- AI weekly digest (generate as DRAFT, review, publish) ---
 

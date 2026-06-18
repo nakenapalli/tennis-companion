@@ -3,10 +3,12 @@ package com.tenniscompanion.reconcile
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
+import java.util.UUID
 
-/** A canonical Sackmann player surfaced as a possible match for an upstream name. */
+/** A canonical player surfaced as a possible match for an upstream name. */
 data class PlayerCandidate(
-    val playerId: Long,
+    val playerId: UUID,
+    val sackmannId: Long?,   // kept for Tier-3 LLM prompts (stable integer identifier)
     val firstName: String?,
     val lastName: String?,
     val countryCode: String?,
@@ -28,7 +30,7 @@ class CandidateFinder(private val namedJdbc: NamedParameterJdbcTemplate) {
         // (singles + contiguous joins) so multi-word surnames are offered as keys. See NameNormalizer.
         val keys = NameNormalizer.surnameKeys(surnameTokens)
         val sql = """
-            SELECT player_id, first_name, last_name, country_code,
+            SELECT id, sackmann_id, first_name, last_name, country_code,
                    EXTRACT(YEAR FROM birth_date)::int AS birth_year
             FROM players
             WHERE tour = :tour
@@ -39,11 +41,12 @@ class CandidateFinder(private val namedJdbc: NamedParameterJdbcTemplate) {
             .addValue("surnames", keys)
         return namedJdbc.query(sql, params) { rs, _ ->
             PlayerCandidate(
-                rs.getLong("player_id"),
-                rs.getString("first_name"),
-                rs.getString("last_name"),
-                rs.getString("country_code"),
-                (rs.getObject("birth_year") as? Number)?.toInt(),
+                playerId = rs.getObject("id", UUID::class.java),
+                sackmannId = rs.getLong("sackmann_id").takeIf { !rs.wasNull() },
+                firstName = rs.getString("first_name"),
+                lastName = rs.getString("last_name"),
+                countryCode = rs.getString("country_code"),
+                birthYear = (rs.getObject("birth_year") as? Number)?.toInt(),
             )
         }
     }

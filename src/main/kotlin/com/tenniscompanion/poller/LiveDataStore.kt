@@ -3,6 +3,7 @@ package com.tenniscompanion.poller
 import com.tenniscompanion.api.LiveMatchDto
 import com.tenniscompanion.api.PlayerSideDto
 import com.tenniscompanion.api.RankingRowDto
+import com.tenniscompanion.insight.MatchFacts
 import com.tenniscompanion.integration.MatchWeighting
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
@@ -15,10 +16,14 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.util.UUID
 
 /**
  * The "fan-out" layer: pollers write here (DB durable snapshot + Redis cache), the serving API reads
  * here (Redis first, Postgres fallback). The upstream API is never touched on the read path.
+ *
+ * All writes target the unified `matches` and `rankings` tables. Redis is a pure read cache;
+ * Postgres is the canonical store for all sources.
  */
 @Repository
 class LiveDataStore(
@@ -28,19 +33,19 @@ class LiveDataStore(
     private val mapper: ObjectMapper,
     private val weighting: MatchWeighting,
 ) {
-    private val cacheTtl = Duration.ofHours(24) // sparse polling on the free tier → long TTL
+    private val cacheTtl = Duration.ofHours(24)
 
     // --- live matches ---
 
     fun saveLiveMatches(source: String, matches: List<LiveMatchDto>) {
         matches.forEach { upsertMatch(source, it) }
-        // matches no longer in the live feed are treated as finished
+        // Matches no longer in the live feed have finished
         val ids = matches.map { it.externalId }
         if (ids.isEmpty()) {
-            jdbc.update("UPDATE live_matches SET status='finished', last_polled_at=now() WHERE source=? AND status='live'", source)
+            jdbc.update("UPDATE matches SET status='finished', last_polled_at=now() WHERE source=? AND status='live'", source)
         } else {
             namedJdbc.update(
-                "UPDATE live_matches SET status='finished', last_polled_at=now() WHERE source=:src AND status='live' AND external_id NOT IN (:ids)",
+                "UPDATE matches SET status='finished', last_polled_at=now() WHERE source=:src AND status='live' AND external_id NOT IN (:ids)",
                 MapSqlParameterSource().addValue("src", source).addValue("ids", ids),
             )
         }
@@ -56,19 +61,37 @@ class LiveDataStore(
     private fun upsertMatch(source: String, m: LiveMatchDto) {
         jdbc.update(
             """
-            INSERT INTO live_matches(source, external_id, status, round, surface, tour, category, qualifying, tournament_name,
-                                     player1_name, player2_name, player1_id, player2_id, score, start_time, last_polled_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?::bigint,?::bigint,?::jsonb,?, now())
-            ON CONFLICT (source, external_id) DO UPDATE SET
+            INSERT INTO matches(source, external_id, status, round, surface, tour, category, qualifying, tourney_name,
+                                player1_name, player2_name, player1_id, player2_id, score_detail, start_time, last_polled_at, serve)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?::uuid,?::uuid,?::jsonb,?,now(),?)
+            ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO UPDATE SET
               status=EXCLUDED.status, round=EXCLUDED.round, surface=EXCLUDED.surface, tour=EXCLUDED.tour,
-              category=EXCLUDED.category, qualifying=EXCLUDED.qualifying, tournament_name=EXCLUDED.tournament_name,
+              category=EXCLUDED.category, qualifying=EXCLUDED.qualifying, tourney_name=EXCLUDED.tourney_name,
               player1_name=EXCLUDED.player1_name, player2_name=EXCLUDED.player2_name,
-              player1_id=EXCLUDED.player1_id, player2_id=EXCLUDED.player2_id, score=EXCLUDED.score,
-              start_time=EXCLUDED.start_time, last_polled_at=now()
+              player1_id=EXCLUDED.player1_id, player2_id=EXCLUDED.player2_id,
+              score_detail=EXCLUDED.score_detail, start_time=EXCLUDED.start_time, last_polled_at=now(),
+              serve=EXCLUDED.serve
             """.trimIndent(),
             source, m.externalId, m.status, m.round, m.surface, m.tour, m.category, m.qualifying, m.tournamentName,
-            m.player1.name, m.player2.name, m.player1.playerId, m.player2.playerId,
+            m.player1.name, m.player2.name, m.player1.playerId?.toString(), m.player2.playerId?.toString(),
             m.score?.let { mapper.writeValueAsString(it) }, m.startTime?.atOffset(ZoneOffset.UTC),
+            m.serve,
+        )
+        if (m.status == "finished") resolveWinner(source, m)
+    }
+
+    /** When a match finishes, populate winner/loser from the score map (idempotent via WHERE winner_id IS NULL). */
+    private fun resolveWinner(source: String, m: LiveMatchDto) {
+        val side = MatchFacts.winnerOf(m.score) ?: return
+        val winner = if (side == "home") m.player1 else m.player2
+        val loser = if (side == "home") m.player2 else m.player1
+        val scoreText = MatchFacts.scoreFrom(m.score, side).replace(", ", " ").takeIf { it.isNotBlank() }
+        jdbc.update(
+            """
+            UPDATE matches SET winner_id=?::uuid, loser_id=?::uuid, winner_name=?, loser_name=?, score=?
+            WHERE source=? AND external_id=? AND winner_id IS NULL
+            """.trimIndent(),
+            winner.playerId?.toString(), loser.playerId?.toString(), winner.name, loser.name, scoreText, source, m.externalId,
         )
     }
 
@@ -77,17 +100,15 @@ class LiveDataStore(
             ?: readMatches(source, "live", null),
     )
 
-    /** Completed matches from today (UTC). Cache first (fixtures-backed), else finished rows polled today. */
+    /** Completed matches from today (UTC). Cache first, else finished rows polled today. */
     fun recentMatches(source: String): List<LiveMatchDto> = weightedSort(
         redis.opsForValue().get(RECENT_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
             ?: readMatches(source, "finished", LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC)),
     )
 
-    /** Order by importance (Grand Slam > tour > Challenger > …, late rounds first), then recency — so the
-     *  most significant match leads regardless of when it started. Applied on read so it's consistent
-     *  whether served from Redis or the Postgres fallback. */
+    /** Order by importance (Grand Slam > tour > Challenger > …, late rounds first), then recency. */
     private fun weightedSort(matches: List<LiveMatchDto>): List<LiveMatchDto> {
-        val ranks = rankByPlayerId() // current ATP/WTA ranks for the UI (the live feed doesn't carry them)
+        val ranks = rankByPlayerId()
         return matches
             .map {
                 it.copy(
@@ -102,9 +123,9 @@ class LiveDataStore(
             )
     }
 
-    /** player_id → current rank, from the latest cached ATP/WTA rankings (namespaced ids don't collide). */
-    private fun rankByPlayerId(): Map<Long, Int> {
-        val map = HashMap<Long, Int>()
+    /** player UUID → current rank, from the latest cached ATP/WTA rankings. */
+    private fun rankByPlayerId(): Map<UUID, Int> {
+        val map = HashMap<UUID, Int>()
         for (tour in listOf("ATP", "WTA")) {
             for (r in rankings(tour, 500)) r.playerId?.let { map[it] = r.rank }
         }
@@ -131,15 +152,17 @@ class LiveDataStore(
         )
     }
 
-    private fun countryByIds(ids: List<Long>): Map<Long, String> =
-        namedJdbc.query(
-            "SELECT player_id, country_code FROM players WHERE player_id IN (:ids) AND country_code IS NOT NULL",
+    private fun countryByIds(ids: List<UUID>): Map<UUID, String> {
+        if (ids.isEmpty()) return emptyMap()
+        return namedJdbc.query(
+            "SELECT id, country_code FROM players WHERE id IN (:ids) AND country_code IS NOT NULL",
             MapSqlParameterSource("ids", ids),
-        ) { rs, _ -> rs.getLong("player_id") to rs.getString("country_code") }.toMap()
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getString("country_code") }.toMap()
+    }
 
     private fun lastPolledAt(source: String, externalId: String): Instant? =
         jdbc.query(
-            "SELECT last_polled_at FROM live_matches WHERE source = ? AND external_id = ?",
+            "SELECT last_polled_at FROM matches WHERE source = ? AND external_id = ?",
             { rs, _ -> rs.getTimestamp("last_polled_at")?.toInstant() },
             source, externalId,
         ).firstOrNull()
@@ -147,9 +170,10 @@ class LiveDataStore(
     private fun readMatches(source: String, status: String, since: Instant?): List<LiveMatchDto> {
         val sql = StringBuilder(
             """
-            SELECT external_id, status, tournament_name, round, surface, tour, category, qualifying,
-                   player1_name, player2_name, player1_id, player2_id, score::text AS score_json, start_time
-            FROM live_matches WHERE source = ? AND status = ?
+            SELECT external_id, status, tourney_name AS tournament_name, round, surface, tour, category, qualifying,
+                   player1_name, player2_name, player1_id, player2_id,
+                   score_detail::text AS score_json, start_time, serve
+            FROM matches WHERE source = ? AND status = ?
             """.trimIndent(),
         )
         val args = mutableListOf<Any?>(source, status)
@@ -165,10 +189,11 @@ class LiveDataStore(
                 tour = rs.getString("tour"),
                 category = rs.getString("category"),
                 qualifying = rs.getBoolean("qualifying"),
-                player1 = PlayerSideDto(rs.getString("player1_name"), rs.getObject("player1_id") as? Long, null, null),
-                player2 = PlayerSideDto(rs.getString("player2_name"), rs.getObject("player2_id") as? Long, null, null),
+                player1 = PlayerSideDto(rs.getString("player1_name"), rs.getObject("player1_id", UUID::class.java), null, null),
+                player2 = PlayerSideDto(rs.getString("player2_name"), rs.getObject("player2_id", UUID::class.java), null, null),
                 score = rs.getString("score_json")?.let { mapper.readValue(it, Map::class.java) as Map<String, Any?> },
                 startTime = rs.getTimestamp("start_time")?.toInstant(),
+                serve = rs.getString("serve"),
             )
         }, *args.toTypedArray())
     }
@@ -180,12 +205,13 @@ class LiveDataStore(
         for (r in rows) {
             jdbc.update(
                 """
-                INSERT INTO live_rankings(tour, rank, player_id, external_name, points, captured_at)
-                VALUES (?,?,?::bigint,?,?,?)
-                ON CONFLICT (tour, rank, captured_at) DO UPDATE SET
-                  player_id=EXCLUDED.player_id, external_name=EXCLUDED.external_name, points=EXCLUDED.points
+                INSERT INTO rankings(source, ranking_date, tour, rank, player_id, external_name, points, captured_at)
+                VALUES ('api-tennis', CURRENT_DATE, ?,?,?::uuid,?,?,?)
+                ON CONFLICT (source, ranking_date, tour, rank) DO UPDATE SET
+                  player_id=EXCLUDED.player_id, external_name=EXCLUDED.external_name, points=EXCLUDED.points,
+                  captured_at=EXCLUDED.captured_at
                 """.trimIndent(),
-                tour, r.rank, r.playerId, r.name, r.points, ts,
+                tour, r.rank, r.playerId?.toString(), r.name, r.points, ts,
             )
         }
         redis.opsForValue().set(rankKey(tour), mapper.writeValueAsString(rows), cacheTtl)
@@ -197,11 +223,20 @@ class LiveDataStore(
         if (cached != null) return cached.take(limit)
         return jdbc.query(
             """
-            SELECT rank, player_id, external_name, points FROM live_rankings
-            WHERE tour = ? AND captured_at = (SELECT max(captured_at) FROM live_rankings WHERE tour = ?)
+            SELECT rank, player_id, external_name, points FROM rankings
+            WHERE source='api-tennis' AND tour=?
+              AND ranking_date=(SELECT MAX(ranking_date) FROM rankings WHERE source='api-tennis' AND tour=?)
             ORDER BY rank LIMIT ?
             """.trimIndent(),
-            { rs, _ -> RankingRowDto(rs.getInt("rank"), rs.getObject("player_id") as? Long, rs.getString("external_name"), null, (rs.getObject("points") as? Number)?.toInt()) },
+            { rs, _ ->
+                RankingRowDto(
+                    rs.getInt("rank"),
+                    rs.getObject("player_id", UUID::class.java),
+                    rs.getString("external_name"),
+                    null,
+                    (rs.getObject("points") as? Number)?.toInt(),
+                )
+            },
             tour, tour, limit,
         )
     }

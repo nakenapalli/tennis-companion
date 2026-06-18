@@ -1,11 +1,12 @@
 package com.tenniscompanion.api
 
 import java.time.LocalDate
+import java.util.UUID
 
 /** Response shapes for the player endpoints. Plain Kotlin data classes → JSON via Jackson. */
 
 data class PlayerProfileDto(
-    val playerId: Long,
+    val playerId: UUID,
     val firstName: String?,
     val lastName: String?,
     val tour: String,
@@ -24,14 +25,14 @@ data class MatchDto(
     val surface: String?,
     val round: String?,
     val result: String,
-    val opponentId: Long?,
+    val opponentId: UUID?,
     val opponentName: String?,
     val score: String?,
 )
 
 data class H2hDto(
-    val playerId: Long,
-    val opponentId: Long,
+    val playerId: UUID,
+    val opponentId: UUID,
     val playerWins: Int,
     val opponentWins: Int,
     val matches: List<MatchDto>,

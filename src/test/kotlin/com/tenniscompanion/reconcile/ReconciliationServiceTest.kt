@@ -3,6 +3,7 @@ package com.tenniscompanion.reconcile
 import com.tenniscompanion.TestcontainersConfiguration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -12,15 +13,22 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
+import java.util.UUID
 
 @Import(TestcontainersConfiguration::class)
 @SpringBootTest
-@TestPropertySource(properties = ["app.poll.enabled=false"]) // don't hit the live feed during tests
+@TestPropertySource(properties = ["app.poll.enabled=false"])
 class ReconciliationServiceTest(
     @Autowired val service: ReconciliationService,
     @Autowired val jdbc: JdbcTemplate,
     @Autowired val store: EntityMapStore,
 ) {
+    // UUIDs populated after seed() by querying back the generated ids
+    private lateinit var alcarazEspUuid: UUID
+    private lateinit var alcarazArgUuid: UUID
+    private lateinit var sinnerUuid: UUID
+    private lateinit var zverevUuid: UUID
+    private lateinit var augUuid: UUID
 
     @BeforeEach
     fun seed() {
@@ -31,13 +39,22 @@ class ReconciliationServiceTest(
         insert(206173, "Jannik", "Sinner", "ITA", "2001-08-16")
         insert(100644, "Alexander", "Zverev", "GER", "1997-04-20")
         insert(220000, "Felix", "Auger-Aliassime", "CAN", "2000-08-08") // hyphenated compound surname
+
+        fun uuid(sackmannId: Long): UUID = jdbc.queryForObject(
+            "SELECT id FROM players WHERE sackmann_id = ?", UUID::class.java, sackmannId,
+        )!!
+        alcarazEspUuid = uuid(207989)
+        alcarazArgUuid = uuid(144750)
+        sinnerUuid = uuid(206173)
+        zverevUuid = uuid(100644)
+        augUuid = uuid(220000)
     }
 
-    private fun insert(id: Long, first: String, last: String, country: String, dob: String) {
+    private fun insert(sackmannId: Long, first: String, last: String, country: String, dob: String) {
         jdbc.update(
-            "INSERT INTO players(player_id, source_player_id, first_name, last_name, country_code, birth_date, tour) " +
+            "INSERT INTO players(sackmann_id, source_player_id, first_name, last_name, country_code, birth_date, tour) " +
                 "VALUES (?,?,?,?,?,?::date,'ATP')",
-            id, id, first, last, country, dob,
+            sackmannId, sackmannId, first, last, country, dob,
         )
     }
 
@@ -47,7 +64,7 @@ class ReconciliationServiceTest(
     @Test
     fun `tier 1 resolves a unique full-name match`() {
         val r = service.resolve(req("x1", "Jannik Sinner"))
-        assertEquals(206173, r.playerId)
+        assertEquals(sinnerUuid, r.playerId)
         assertEquals(ReconciliationTier.DETERMINISTIC, r.tier)
         assertTrue(r.confirmed)
     }
@@ -55,27 +72,26 @@ class ReconciliationServiceTest(
     @Test
     fun `tier 1 handles an initial`() {
         val r = service.resolve(req("x2", "A. Zverev"))
-        assertEquals(100644, r.playerId)
+        assertEquals(zverevUuid, r.playerId)
     }
 
     @Test
     fun `tier 1 resolves a hyphenated compound surname`() {
-        // upstream hyphen vs stored hyphen, both folded the same way on each side
         val r = service.resolve(req("x8", "F. Auger-Aliassime"))
-        assertEquals(220000, r.playerId)
+        assertEquals(augUuid, r.playerId)
         assertEquals(ReconciliationTier.DETERMINISTIC, r.tier)
     }
 
     @Test
     fun `tier 1 resolves a multi-word surname given with a space`() {
         val r = service.resolve(req("x9", "Felix Auger Aliassime"))
-        assertEquals(220000, r.playerId)
+        assertEquals(augUuid, r.playerId)
     }
 
     @Test
     fun `tier 2 disambiguates a collision by country`() {
         val r = service.resolve(req("x3", "Carlos Alcaraz", country = "ESP"))
-        assertEquals(207989, r.playerId)
+        assertEquals(alcarazEspUuid, r.playerId)
         assertEquals(ReconciliationTier.RULES, r.tier)
         assertTrue(r.confirmed)
     }
@@ -98,9 +114,10 @@ class ReconciliationServiceTest(
     @Test
     fun `tier 0 returns the cached mapping regardless of name`() {
         service.resolve(req("x6", "Jannik Sinner")) // writes a confirmed mapping
-        jdbc.update("UPDATE players SET last_name = 'CHANGED' WHERE player_id = 206173")
+        jdbc.update("UPDATE players SET last_name = 'CHANGED' WHERE sackmann_id = 206173")
         val r = service.resolve(req("x6", "Totally Different Name"))
-        assertEquals(206173, r.playerId)
+        assertNotNull(r.playerId)
+        assertEquals(sinnerUuid, r.playerId)
         assertEquals(ReconciliationTier.CACHE, r.tier)
     }
 }

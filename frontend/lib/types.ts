@@ -1,7 +1,7 @@
 // Mirrors the backend DTOs.
 
 export interface PlayerProfile {
-  playerId: number;
+  playerId: string;
   firstName?: string;
   lastName?: string;
   tour: string;
@@ -19,14 +19,14 @@ export interface MatchDto {
   surface?: string;
   round?: string;
   result: string; // "W" | "L"
-  opponentId?: number;
+  opponentId?: string;
   opponentName?: string;
   score?: string;
 }
 
 export interface H2h {
-  playerId: number;
-  opponentId: number;
+  playerId: string;
+  opponentId: string;
   playerWins: number;
   opponentWins: number;
   matches: MatchDto[];
@@ -34,7 +34,7 @@ export interface H2h {
 
 export interface PlayerSide {
   name: string;
-  playerId?: number;
+  playerId?: string;
   country?: string;
   rank?: number;
 }
@@ -64,7 +64,7 @@ export interface SideScore {
 
 export interface RankingRow {
   rank: number;
-  playerId?: number;
+  playerId?: string;
   name: string;
   country?: string;
   points?: number;
@@ -83,7 +83,7 @@ export interface Tournament {
 }
 
 export interface Favorite {
-  playerId: number;
+  playerId: string;
   firstName?: string;
   lastName?: string;
   tour?: string;

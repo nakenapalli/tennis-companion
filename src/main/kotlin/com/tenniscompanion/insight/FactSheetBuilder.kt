@@ -6,6 +6,7 @@ import com.tenniscompanion.poller.LiveDataStore
 import com.tenniscompanion.poller.TournamentStore
 import org.springframework.stereotype.Component
 import java.time.LocalDate
+import java.util.UUID
 
 /** The assembled fact sheet plus the set of entity names it contains (for output validation). */
 data class FactSheet(val data: Map<String, Any?>, val entityNames: Set<String>) {
@@ -58,9 +59,9 @@ class FactSheetBuilder(
         // resolve each player once → canonical name + rank from Sackmann
         val ids = matches.flatMap { listOf(it.player1.playerId!!, it.player2.playerId!!) }.distinct()
         val profiles = ids.associateWith { players.profile(it) }
-        fun nameOf(id: Long, fallback: String): String =
+        fun nameOf(id: UUID, fallback: String): String =
             profiles[id]?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null } } ?: fallback
-        fun rankOf(id: Long): Int? = profiles[id]?.currentRank
+        fun rankOf(id: UUID): Int? = profiles[id]?.currentRank
 
         val matchups = matches.mapNotNull { m ->
             val side = MatchFacts.winnerOf(m.score) ?: return@mapNotNull null // skip if winner undeterminable

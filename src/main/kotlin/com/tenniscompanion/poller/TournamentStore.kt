@@ -42,7 +42,8 @@ class TournamentStore(
                 INSERT INTO tournaments(source, external_id, name, level, surface, location, tour, start_date, end_date)
                 VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT (source, external_id) DO UPDATE SET
-                  name=EXCLUDED.name, level=EXCLUDED.level, surface=EXCLUDED.surface,
+                  name=EXCLUDED.name, level=EXCLUDED.level,
+                  surface=COALESCE(EXCLUDED.surface, tournaments.surface),
                   location=EXCLUDED.location, tour=EXCLUDED.tour, start_date=EXCLUDED.start_date, end_date=EXCLUDED.end_date
                 """.trimIndent(),
                 source, t.externalId, t.name, t.level, t.surface, t.location, t.tour, t.startDate, t.endDate,

@@ -12,7 +12,7 @@ export default function SettingsPage() {
   const { mainTourOnly, setMainTourOnly } = usePrefs();
   const { data, mutate, isLoading } = useSWR<Favorite[]>(token ? "/api/me/favorites" : null, fetcher);
 
-  async function remove(playerId: number) {
+  async function remove(playerId: string) {
     await apiFetch(`/api/me/favorites/${playerId}`, { method: "DELETE" });
     mutate();
   }

@@ -4,19 +4,22 @@ import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.LocalDate
+import java.util.UUID
 
 /**
- * A player from the Sackmann historical data. `playerId` is the canonical (namespaced) id —
- * see the V2 migration. The kotlin-jpa (no-arg) + all-open Gradle plugins let this `class` with
- * read-only `val`s serve as a JPA entity without a hand-written no-arg constructor. Property names
- * map to snake_case columns via Spring Boot's default Hibernate naming strategy (no `@Column`s needed).
+ * A player in the canonical store. `id` is a UUID generated at first insert (either by the
+ * Sackmann historical loader or when a new player is created from the API Tennis feed).
+ * `sackmannId` is the old namespaced BIGINT kept for traceability and for the Tier-3 LLM
+ * candidate prompts (which need a stable integer identifier). Property names map to snake_case
+ * via Spring Boot's default Hibernate naming strategy.
  */
 @Entity
 @Table(name = "players")
 class Player(
     @Id
-    val playerId: Long,
-    val sourcePlayerId: Long,
+    val id: UUID,
+    val sackmannId: Long?,       // former namespaced player_id; null for API-Tennis-only players
+    val sourcePlayerId: Long?,   // raw (pre-offset) Sackmann id; null for non-Sackmann players
     val firstName: String?,
     val lastName: String?,
     val hand: String?,

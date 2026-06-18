@@ -1,6 +1,7 @@
 package com.tenniscompanion.poller
 
 import com.tenniscompanion.config.PollProperties
+import com.tenniscompanion.enrichment.EnrichmentQueueStore
 import com.tenniscompanion.integration.TennisApiAdapter
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
@@ -15,6 +16,7 @@ class TournamentSyncJob(
     private val adapter: TennisApiAdapter,
     private val store: TournamentStore,
     private val props: PollProperties,
+    private val enrichmentQueue: EnrichmentQueueStore,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -26,6 +28,10 @@ class TournamentSyncJob(
     fun sync(): Int {
         val tournaments = adapter.fetchCurrentTournaments()
         store.upsert(adapter.source, tournaments)
+        // Queue surface enrichment for any tournament the feed didn't supply a surface for
+        store.current(adapter.source)
+            .filter { it.surface.isNullOrBlank() }
+            .forEach { t -> enrichmentQueue.enqueue("tournament", t.id.toString(), listOf("surface")) }
         log.info("Tournament sync: {} current tournaments", tournaments.size)
         return tournaments.size
     }

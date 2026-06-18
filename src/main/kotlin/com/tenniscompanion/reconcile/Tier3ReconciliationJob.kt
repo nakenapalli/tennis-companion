@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
+import java.util.UUID
 
 /** Per-batch outcome counts, returned to the admin trigger. */
 data class Tier3Summary(
@@ -26,7 +27,11 @@ private data class Tier3ExternalEntity(
     @JsonProperty("observed_context") val observedContext: Map<String, Any?>,
 )
 
-/** Serialized into the prompt's <candidates> block (only the fields we can ground from the DB). */
+/**
+ * Serialized into the prompt's <candidates> block. player_id maps to sackmann_id (stable integer)
+ * so the LLM can reason about it and return it in its JSON response. After the LLM picks a
+ * sackmann_id, we resolve the UUID from the players table before writing to entity_map.
+ */
 private data class Tier3CandidateView(
     @JsonProperty("player_id") val playerId: Long,
     val name: String,
@@ -87,7 +92,8 @@ class Tier3ReconciliationJob(
                 continue
             }
 
-            val cands = candidates.bySurname(tour, tokens)
+            // Only candidates with a sackmann_id are usable for LLM prompts (need a stable integer id).
+            val cands = candidates.bySurname(tour, tokens).filter { it.sackmannId != null }
             if (cands.isEmpty()) {
                 // Surname isn't in the historical set — nothing to choose from. Mark it LLM-examined
                 // (rationale explains why) so the next batch doesn't keep re-picking it.
@@ -97,7 +103,7 @@ class Tier3ReconciliationJob(
             }
 
             val decision = classify(row, tour, cands)
-            val candidateIds = cands.mapTo(HashSet()) { it.playerId }
+            val candidateIds = cands.mapNotNullTo(HashSet()) { it.sackmannId }
 
             when {
                 decision == null || !Tier3Parsing.isValid(decision, candidateIds) -> {
@@ -111,7 +117,9 @@ class Tier3ReconciliationJob(
                 }
                 else -> {
                     val confirmed = decision.confidence >= reconProps.confidenceThreshold
-                    writeBack(row, tour, decision.playerId, decision.confidence, confirmed, decision.rationale)
+                    // Resolve sackmann_id → UUID before persisting (entity_map.player_id is UUID)
+                    val playerUuid = store.playerUuidBySackmannId(decision.playerId)
+                    writeBack(row, tour, playerUuid, decision.confidence, confirmed, decision.rationale)
                     if (confirmed) resolved++ else review++
                 }
             }
@@ -131,7 +139,7 @@ class Tier3ReconciliationJob(
         val external = Tier3ExternalEntity(row.source, row.externalPlayerId, row.externalName, tour, observed)
         val views = cands.map {
             Tier3CandidateView(
-                playerId = it.playerId,
+                playerId = it.sackmannId!!,
                 name = listOfNotNull(it.firstName, it.lastName).joinToString(" ").trim(),
                 country = it.countryCode,
                 birthYear = it.birthYear,
@@ -154,7 +162,7 @@ class Tier3ReconciliationJob(
     private fun writeBack(
         row: ReconcileQueueRow,
         tour: String,
-        playerId: Long?,
+        playerId: UUID?,
         confidence: Double?,
         confirmed: Boolean,
         rationale: String,
