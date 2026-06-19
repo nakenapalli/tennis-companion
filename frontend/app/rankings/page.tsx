@@ -1,13 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher } from "@/lib/api";
+import { flagEmoji } from "@/lib/flags";
 import type { RankingRow } from "@/lib/types";
 
 export default function RankingsPage() {
-  const [tour, setTour] = useState<"ATP" | "WTA">("ATP");
+  // useSearchParams must sit under a Suspense boundary for the production build to prerender the page.
+  return (
+    <Suspense fallback={<div className="spinner">Loading…</div>}>
+      <Rankings />
+    </Suspense>
+  );
+}
+
+function Rankings() {
+  // Seed the selected tour from ?tour= (e.g. the home page's "See all" links); default ATP.
+  const initialTour = useSearchParams().get("tour") === "WTA" ? "WTA" : "ATP";
+  const [tour, setTour] = useState<"ATP" | "WTA">(initialTour);
   const { data, isLoading } = useSWR<RankingRow[]>(`/api/rankings?tour=${tour}&limit=100`, fetcher);
 
   return (
@@ -28,7 +41,7 @@ export default function RankingsPage() {
       ) : !data || data.length === 0 ? (
         <div className="empty">No rankings loaded yet — an admin needs to run a rankings poll.</div>
       ) : (
-        <table>
+        <table className="rankings-table">
           <thead>
             <tr>
               <th>#</th>
@@ -48,7 +61,10 @@ export default function RankingsPage() {
                     r.name
                   )}
                 </td>
-                <td className="muted">{r.country ?? ""}</td>
+                <td>
+                  {flagEmoji(r.country) && <span className="flag">{flagEmoji(r.country)}</span>}
+                  <span className="muted">{r.country ?? ""}</span>
+                </td>
                 <td>{r.points ?? ""}</td>
               </tr>
             ))}

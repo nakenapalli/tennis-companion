@@ -44,3 +44,6 @@ out/
 
 ### Sackmann datasets (cloned, not committed) ###
 data/
+
+### dev.sh runtime state (pids + logs) ###
+.dev/

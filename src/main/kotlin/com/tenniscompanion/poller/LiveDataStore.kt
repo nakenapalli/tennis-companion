@@ -5,6 +5,7 @@ import com.tenniscompanion.api.PlayerSideDto
 import com.tenniscompanion.api.RankingRowDto
 import com.tenniscompanion.insight.MatchFacts
 import com.tenniscompanion.integration.MatchWeighting
+import com.tenniscompanion.reconcile.NameNormalizer
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -96,31 +97,62 @@ class LiveDataStore(
     }
 
     fun liveMatches(source: String): List<LiveMatchDto> = weightedSort(
+        source,
         redis.opsForValue().get(LIVE_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
             ?: readMatches(source, "live", null),
     )
 
     /** Completed matches from today (UTC). Cache first, else finished rows polled today. */
     fun recentMatches(source: String): List<LiveMatchDto> = weightedSort(
+        source,
         redis.opsForValue().get(RECENT_KEY)?.let { mapper.readValue(it, Array<LiveMatchDto>::class.java).toList() }
             ?: readMatches(source, "finished", LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC)),
     )
 
     /** Order by importance (Grand Slam > tour > Challenger > …, late rounds first), then recency. */
-    private fun weightedSort(matches: List<LiveMatchDto>): List<LiveMatchDto> {
+    private fun weightedSort(source: String, matches: List<LiveMatchDto>): List<LiveMatchDto> {
         val ranks = rankByPlayerId()
+        val tournamentIds = tournamentIdsByFoldedName(source)
+        // The feed has no country; backfill it (like rank) so the list cards can show a flag, not just the detail view.
+        val countries = countryByIds(matches.flatMap { listOfNotNull(it.player1.playerId, it.player2.playerId) }.distinct())
         return matches
             .map {
                 it.copy(
                     tier = weighting.tierOf(it.tournamentName, it.category).name,
-                    player1 = it.player1.copy(rank = it.player1.rank ?: it.player1.playerId?.let { id -> ranks[id] }),
-                    player2 = it.player2.copy(rank = it.player2.rank ?: it.player2.playerId?.let { id -> ranks[id] }),
+                    tournamentId = resolveTournamentId(tournamentIds, it.tournamentName),
+                    player1 = it.player1.copy(
+                        rank = it.player1.rank ?: it.player1.playerId?.let { id -> ranks[id] },
+                        country = it.player1.country ?: it.player1.playerId?.let { id -> countries[id] },
+                    ),
+                    player2 = it.player2.copy(
+                        rank = it.player2.rank ?: it.player2.playerId?.let { id -> ranks[id] },
+                        country = it.player2.country ?: it.player2.playerId?.let { id -> countries[id] },
+                    ),
                 )
             }
             .sortedWith(
                 compareByDescending<LiveMatchDto> { weighting.weight(it.tournamentName, it.category, it.round, it.qualifying) }
                     .thenByDescending { it.startTime ?: Instant.MIN },
             )
+    }
+
+    /** foldedName → tournaments.id for the source. Built once per sorted read; the set is small (current events). */
+    private fun tournamentIdsByFoldedName(source: String): Map<String, Long> {
+        val rows = jdbc.query(
+            "SELECT id, name FROM tournaments WHERE source = ? AND name IS NOT NULL",
+            { rs, _ -> NameNormalizer.fold(rs.getString("name")) to rs.getLong("id") },
+            source,
+        )
+        val out = LinkedHashMap<String, Long>()
+        for ((folded, id) in rows) if (folded.isNotBlank()) out.putIfAbsent(folded, id)
+        return out
+    }
+
+    /** Match a denormalized tournament name to its id: exact folded match first, else containment either way. */
+    private fun resolveTournamentId(byName: Map<String, Long>, tournamentName: String?): Long? {
+        val f = tournamentName?.let { NameNormalizer.fold(it) }?.takeIf { it.isNotBlank() } ?: return null
+        byName[f]?.let { return it }
+        return byName.entries.firstOrNull { f.contains(it.key) || it.key.contains(f) }?.value
     }
 
     /** player UUID → current rank, from the latest cached ATP/WTA rankings. */
@@ -130,6 +162,22 @@ class LiveDataStore(
             for (r in rankings(tour, 500)) r.playerId?.let { map[it] = r.rank }
         }
         return map
+    }
+
+    /**
+     * Today's matches (live + recently finished) belonging to the named tournament, importance-sorted.
+     * Matches carry only a denormalized `tournamentName` (no FK), so we match on the accent/case-folded
+     * name — containment either way absorbs a tour prefix (feed "WTA Roland Garros" ⊇ "Roland Garros").
+     */
+    fun matchesForTournament(source: String, tournamentName: String): List<LiveMatchDto> {
+        val target = NameNormalizer.fold(tournamentName)
+        if (target.isBlank()) return emptyList()
+        val byId = LinkedHashMap<String, LiveMatchDto>()
+        for (m in liveMatches(source) + recentMatches(source)) {
+            val name = m.tournamentName?.let { NameNormalizer.fold(it) } ?: continue
+            if (name == target || name.contains(target) || target.contains(name)) byId.putIfAbsent(m.externalId, m)
+        }
+        return byId.values.toList()
     }
 
     // --- single match (dedicated match view) ---

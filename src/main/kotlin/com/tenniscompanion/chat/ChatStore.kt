@@ -73,6 +73,12 @@ class ChatStore(
         )
     }
 
+    /** Every thread for a match, each with its current active-chatter count. Used to aggregate across a tournament. */
+    fun allThreads(matchId: String): List<ThreadSummaryDto> =
+        redis.opsForHash<String, String>().values(threadsKey(matchId))
+            .map { mapper.readValue<ThreadMeta>(it) }
+            .map { summary(it, activeChatters(matchId, it.id)) }
+
     fun thread(matchId: String, threadId: String, locked: Boolean): ThreadDetailDto? {
         val meta = redis.opsForHash<String, String>().get(threadsKey(matchId), threadId)
             ?.let { mapper.readValue<ThreadMeta>(it) } ?: return null

@@ -30,6 +30,40 @@ cd frontend && npm install && npm run dev   # :3000
 npm run build                              # type-check
 ```
 
+### Quick dev environment (`./dev.sh`)
+
+`./dev.sh` spins the **app** processes (backend :8080 + frontend :3000) up and down together for a test
+environment. It does **not** manage infra — keep Postgres/Redis running for your session
+(`docker compose up -d postgres redis`); `up` only checks they're reachable and bails with a hint if not.
+
+```bash
+./dev.sh up        # start backend + frontend, wait until both answer
+./dev.sh down      # stop both (infra left running)
+./dev.sh restart
+./dev.sh status    # what's running + infra reachability
+./dev.sh logs [backend|frontend]   # tail -F (both if no arg)
+```
+
+Each process runs in its own session (`setsid`/`nohup`) so it outlives the script and `down` can kill the
+whole tree; pids + logs live in `.dev/` (gitignored).
+
+## Data model & historical (Sackmann) data
+
+**The Sackmann repos (`JeffSackmann/tennis_atp` / `tennis_wta`) are no longer publicly accessible** — the
+`git clone` commands in `AGENTS.md` / `docs/tennis-app-data-setup-briefer.md` are stale and will fail. Seed
+the historical load from a **local copy** of the CSVs in `data/tennis_atp` and `data/tennis_wta` (override
+the paths with `SACKMANN_ATP_DIR` / `SACKMANN_WTA_DIR`; see `application.yml`). This load is the prerequisite
+for everything reconciled: without players loaded, nothing reconciles, so live matches show **no country,
+rank, or player links** — the live feed carries none of those, they're only attached by mapping a match's
+players onto reconciled Sackmann player rows.
+
+**Unified, accumulating model.** Live API Tennis data is **not** kept ephemeral or separate from the
+Sackmann history — both share **one unified schema** (the `matches` / `rankings` tables). The Sackmann load
+lays down the historical base; ongoing API Tennis polling is **enriched and upserted on top of it**, so the
+DB is a **running history** rather than a transient live snapshot (this is the "unify schema + enrichment
+job" work). Reconciliation maps the upstream player ids onto the canonical Sackmann player set; Redis stays
+a pure read cache over these tables.
+
 ## Frontend routes
 
 App Router pages under `frontend/app/`:
@@ -37,6 +71,7 @@ App Router pages under `frontend/app/`:
 - `/scores` — full scores feed
 - `/rankings` — ATP/WTA rankings
 - `/tournaments` — tournament list
+- `/tournaments/[id]` — tournament detail (Overview: info + ATP/WTA matches + headlines; Threads: per-match chat threads ranked by active chatters)
 - `/matches/[externalId]` — match detail + live chat (SSE)
 - `/players/[id]` — player profile + H2H
 - `/login`, `/settings` — auth pages

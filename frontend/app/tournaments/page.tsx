@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { isMainTour, usePrefs } from "@/lib/prefs";
@@ -22,14 +23,14 @@ export default function TournamentsPage() {
       ) : (
         <div className="grid">
           {tournaments.map((t) => (
-            <article key={t.id} className="card">
+            <Link key={t.id} href={`/tournaments/${t.id}`} className="card card-link card-clickable">
               <div className="match-top"><strong>{t.name}</strong></div>
               <div className="sub">{[t.level, t.surface].filter(Boolean).join(" · ") || "—"}</div>
               <div className="muted" style={{ fontSize: 13 }}>
                 {t.startDate ?? ""}
                 {t.endDate ? ` → ${t.endDate}` : ""}
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       )}

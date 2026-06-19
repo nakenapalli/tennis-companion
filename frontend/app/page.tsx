@@ -6,6 +6,7 @@ import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ScoresFeed } from "@/components/ScoresFeed";
 import { Markdown } from "@/components/Markdown";
+import { Flag } from "@/components/Flag";
 import type { Favorite, Insight, RankingRow } from "@/lib/types";
 
 /**
@@ -34,6 +35,7 @@ function extractSources(markdown: string): { body: string; sources: Array<{ text
 export default function HomePage() {
   const { token } = useAuth();
   const atp = useSWR<RankingRow[]>("/api/rankings?tour=ATP&limit=5", fetcher);
+  const wta = useSWR<RankingRow[]>("/api/rankings?tour=WTA&limit=5", fetcher);
   const favs = useSWR<Favorite[]>(token ? "/api/me/favorites" : null, fetcher);
   // Latest published digest. Renders only if present — any generation/scrape/LLM failure means nothing
   // is published, so the home gracefully falls back to scores + rankings with no insight.
@@ -76,14 +78,26 @@ export default function HomePage() {
         scores
       )}
 
-      <div className="row-between">
-        <h2>ATP top 5</h2>
-        <Link href="/rankings" className="player-link">Full rankings →</Link>
+      <div className="rankings-split">
+        <Top5 title="ATP top 5" tour="ATP" rows={atp.data} />
+        <Top5 title="WTA top 5" tour="WTA" rows={wta.data} />
       </div>
-      {atp.data && atp.data.length > 0 ? (
+    </div>
+  );
+}
+
+/** A tour's top-5 ranking table with a heading + link to that tour's full rankings. */
+function Top5({ title, tour, rows }: { title: string; tour: "ATP" | "WTA"; rows?: RankingRow[] }) {
+  return (
+    <section>
+      <div className="row-between">
+        <h2>{title}</h2>
+        <Link href={`/rankings?tour=${tour}`} className="player-link">See all →</Link>
+      </div>
+      {rows && rows.length > 0 ? (
         <table>
           <tbody>
-            {atp.data.map((r) => (
+            {rows.map((r) => (
               <tr key={r.rank}>
                 <td className="rank-num">{r.rank}</td>
                 <td>
@@ -91,9 +105,9 @@ export default function HomePage() {
                     <Link href={`/players/${r.playerId}`} className="player-link">{r.name}</Link>
                   ) : (
                     r.name
-                  )}
+                  )}{" "}
+                  <Flag ioc={r.country} />
                 </td>
-                <td className="muted">{r.country}</td>
                 <td>{r.points}</td>
               </tr>
             ))}
@@ -102,6 +116,6 @@ export default function HomePage() {
       ) : (
         <div className="empty">Rankings not loaded yet.</div>
       )}
-    </div>
+    </section>
   );
 }

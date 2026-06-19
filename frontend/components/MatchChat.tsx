@@ -14,9 +14,17 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
  * Snapshots come from REST; live updates over SSE. Logged-out users see the list but can't open threads
  * or post; once the match is finished, posting is locked but threads stay viewable.
  */
-export function MatchChat({ matchId, locked }: { matchId: string; locked: boolean }) {
+export function MatchChat({
+  matchId,
+  locked,
+  initialThreadId = null,
+}: {
+  matchId: string;
+  locked: boolean;
+  initialThreadId?: string | null; // deep-link straight into a thread (e.g. from a tournament's Threads tab)
+}) {
   const { token } = useAuth();
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(initialThreadId);
 
   return threadId ? (
     <ThreadView matchId={matchId} threadId={threadId} locked={locked} canPost={!!token} onBack={() => setThreadId(null)} />

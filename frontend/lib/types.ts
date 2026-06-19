@@ -52,6 +52,7 @@ export interface LiveMatch {
   player2: PlayerSide;
   score?: { home?: SideScore; away?: SideScore } | null;
   startTime?: string;
+  tournamentId?: number; // canonical tournaments.id, name-matched on read — link target for the tournament page
   tier?: string; // GRAND_SLAM | FINALS | MASTERS_1000 | TOUR_500 | TOUR_250 | CHALLENGER | ITF | JUNIOR | OTHER
   serve?: string; // "home" | "away" — who is currently serving (live only)
 }
@@ -130,6 +131,25 @@ export interface ThreadList {
   active: ChatThreadSummary[];
   latest: ChatThreadSummary[];
   locked: boolean;
+}
+
+/** A news headline on a tournament's Overview tab (metadata only — bodies are never persisted). */
+export interface Headline {
+  title: string;
+  publication: string;
+  url: string;
+  publishedAt?: string;
+}
+
+/** A chat thread surfaced on a tournament's Threads tab, carrying its owning match for the condensed score. */
+export interface TournamentThread {
+  matchExternalId: string;
+  threadId: string;
+  title: string;
+  authorName: string;
+  messageCount: number;
+  activeChatters: number;
+  match: LiveMatch;
 }
 
 export interface Insight {

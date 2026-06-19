@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { LiveMatch, PlayerSide, SideScore } from "@/lib/types";
+import { Flag } from "@/components/Flag";
 import { TierBadge } from "@/components/TierBadge";
 import { roundSuffix, setWinners } from "@/lib/score";
 
@@ -30,7 +31,14 @@ export function MatchCard({ m, grouped = false }: { m: LiveMatch; grouped?: bool
       <div className="match-top">
         <span className={`badge ${live ? "live" : "final"}`}>{live ? "● Live" : "Final"}</span>
         <span className="match-meta">
-          {!grouped && m.tournamentName && <span className="tag">{m.tournamentName}</span>}
+          {!grouped && m.tournamentName &&
+            (m.tournamentId != null ? (
+              <Link href={`/tournaments/${m.tournamentId}`} className="tag tag-link" onClick={(e) => e.stopPropagation()}>
+                {m.tournamentName}
+              </Link>
+            ) : (
+              <span className="tag">{m.tournamentName}</span>
+            ))}
           {!grouped && <TierBadge tier={m.tier} tour={m.tour} detailed />}
           {m.qualifying && <span className="tag tag-qual">Qualifying</span>}
           {round && <span className="tag">{round}</span>}
@@ -60,6 +68,7 @@ function PlayerLine({
     <div className="player-row">
       <span className="player-name">
         {live && <span className={serving ? "serve-dot" : "serve-dot hidden"} aria-label={serving ? "Serving" : undefined} />}
+        <Flag ioc={side.country} />
         {side.playerId ? (
           <Link href={`/players/${side.playerId}`} className="player-link" onClick={(e) => e.stopPropagation()}>
             {side.name}
@@ -68,7 +77,6 @@ function PlayerLine({
           side.name
         )}
         {side.rank != null && <span className="player-rank">{side.rank}</span>}
-        {side.country ? <span className="muted"> {side.country}</span> : null}
       </span>
       <span className="score-cell">
         {sets.length > 0 && (

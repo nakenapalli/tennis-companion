@@ -65,6 +65,12 @@ td { padding: 9px 10px; border-bottom: 1px solid var(--line); font-variant-numer
 tr:hover td { background: var(--panel); }
 .rank-num { color: var(--muted); width: 40px; }
 
+/* Fixed column widths so the table doesn't shift x-position when switching ATP/WTA (name lengths differ). */
+.rankings-table { table-layout: fixed; }
+.rankings-table th:nth-child(1), .rankings-table td:nth-child(1) { width: 48px; }   /* # */
+.rankings-table th:nth-child(3), .rankings-table td:nth-child(3) { width: 110px; }  /* Country */
+.rankings-table th:nth-child(4), .rankings-table td:nth-child(4) { width: 96px; }   /* Points */
+
 /* toggle */
 .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .toggle button { background: none; border: none; color: var(--muted); padding: 6px 16px; cursor: pointer; font-size: 13px; }
@@ -82,6 +88,8 @@ tr:hover td { background: var(--panel); }
 
 /* misc */
 .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+.tag-link { cursor: pointer; }
+.tag-link:hover { color: var(--text); border-color: var(--accent-dim); }
 .tag-qual { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: var(--accent); border-color: var(--accent); }
 .pill { color: var(--accent); font-weight: 700; }
 .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 36px; text-align: center; color: var(--muted); }
@@ -111,6 +119,8 @@ tr:hover td { background: var(--panel); }
 /* home: scores (left) | latest digest (right), stacking on narrow screens */
 .home-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 100px; align-items: start; }
 @media (max-width: 760px) { .home-split { grid-template-columns: 1fr; } }
+.rankings-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+@media (max-width: 760px) { .rankings-split { grid-template-columns: 1fr; } }
 
 /* tournament tier badges on match cards / scores sections */
 .match-meta { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
@@ -172,3 +182,34 @@ tr:hover td { background: var(--panel); }
 .chat-input:focus { outline: none; border-color: var(--accent-dim); }
 .chat-cta { justify-content: space-between; }
 .chat-locked { justify-content: center; font-size: 13px; }
+
+/* tournament detail page */
+.tourney-hero { margin: 4px 0 8px; }
+.tourney-hero .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--muted); font-size: 14px; margin-top: 6px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 18px 0 4px; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 600; padding: 8px 14px; margin-bottom: -1px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab .count { color: var(--muted); font-weight: 500; margin-left: 6px; }
+
+/* headlines */
+.headlines { display: flex; flex-direction: column; gap: 2px; }
+.headline { display: block; padding: 10px 0; border-top: 1px solid var(--line); }
+.headline:hover .headline-title { color: var(--accent); }
+.headline-title { font-size: 14px; }
+.headline-src { color: var(--muted); font-size: 12px; margin-top: 3px; }
+
+/* tournament threads tab — thread card with a condensed score */
+.thread-card { display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%; cursor: pointer; }
+.thread-card .thread-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.thread-card .thread-title { font-size: 15px; font-weight: 600; }
+.active-pill { font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(74,222,128,0.12); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+
+/* condensed match score (mini) */
+.mini-score { border-top: 1px solid var(--line); padding-top: 8px; }
+.mini-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; }
+.mini-row + .mini-row { }
+.mini-name { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-sets { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; display: inline-flex; gap: 7px; }
+.mini-sets .won { color: var(--text); font-weight: 700; }
+.mini-meta { color: var(--muted); font-size: 12px; }
