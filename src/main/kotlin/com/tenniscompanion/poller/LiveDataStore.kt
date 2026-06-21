@@ -249,13 +249,16 @@ class LiveDataStore(
     // --- rankings ---
 
     fun saveRankings(tour: String, rows: List<RankingRowDto>, capturedAt: Instant) {
+        // Rankings are never legitimately empty, so an empty set means the upstream call failed or
+        // returned nothing useful — skip the write (and the cache overwrite) to keep last-good data.
+        if (rows.isEmpty()) return
         val ts = OffsetDateTime.ofInstant(capturedAt, ZoneOffset.UTC)
         for (r in rows) {
             jdbc.update(
                 """
                 INSERT INTO rankings(source, ranking_date, tour, rank, player_id, external_name, points, captured_at)
                 VALUES ('api-tennis', CURRENT_DATE, ?,?,?::uuid,?,?,?)
-                ON CONFLICT (source, ranking_date, tour, rank) DO UPDATE SET
+                ON CONFLICT (source, ranking_date, tour, rank) WHERE source <> 'sackmann' DO UPDATE SET
                   player_id=EXCLUDED.player_id, external_name=EXCLUDED.external_name, points=EXCLUDED.points,
                   captured_at=EXCLUDED.captured_at
                 """.trimIndent(),

@@ -14,12 +14,14 @@ The three design docs in **`docs/`** are the source of truth (kept updated to ma
 
 **Status:** Phases 0–6 are done — incl. the provider swap, **Phase 6a** (AI digest backend, verified
 live) and **Phase 6b** (reconciliation **Tier 3** LLM classifier + the frontend digest page at
-`/insights`). Next is **Phase 7** polish.
+`/insights`). The UUID + unified-table migration is also done (see Conventions below). **Phase 7 is in
+progress:** the admin reconciliation review UI, upstream-outage resilience, and upstream rate limiting
+are done (see Conventions); the enrichment LLM pass and optional SSE/adaptive cadence/draws remain.
 
 ## Stack
 - **Backend:** Kotlin + **Spring Boot 4.0** (JVM 21), Postgres 16, Redis 7, Flyway. Plain blocking Spring
   MVC (no WebFlux/coroutines). Package root `com.tenniscompanion`
-  (`config/ integration/ poller/ loader/ reconcile/ insight/ api/ domain/ security/`).
+  (`config/ integration/ poller/ loader/ reconcile/ insight/ api/ domain/ security/ enrichment/`).
 - **Frontend:** **Next.js 16** (App Router) + TypeScript + SWR, plain CSS. In `frontend/` (own `AGENTS.md`).
 - **Live provider:** API Tennis (api-tennis.com). **LLM:** Anthropic Claude — Sonnet for the digest, Haiku
   reserved for reconciliation Tier-3.
@@ -48,14 +50,24 @@ sits just above OS env vars so values resolve reliably, below command-line args)
   brief comment where an idiom would surprise a Java dev.
 - **Jackson 3 on Boot 4:** databind is `tools.jackson.databind.*`, but `@JsonProperty` is still imported
   from `com.fasterxml.jackson.annotation`.
-- **Player-id namespacing:** ATP = raw Sackmann id; **WTA = raw id + 1,000,000,000** (`player_id >= 1e9` ⇒ WTA).
+- **Player IDs are UUIDs:** `players.id UUID` is the canonical PK everywhere (DTOs, FK columns, API responses). `sackmann_id BIGINT` is kept alongside it for traceability and Tier-3 LLM prompts (the LLM receives integer ids; after it picks one, a `SELECT id FROM players WHERE sackmann_id = ?` lookup converts back to UUID). **WTA sackmann_ids still carry the 1,000,000,000 offset** so the `UNIQUE(sackmann_id)` constraint is satisfied (raw ATP and WTA ids can overlap); `source_player_id` holds the raw pre-offset value.
+- **Unified tables — no more live/historical split:** `matches` is the single table for all rows regardless of source (`source='sackmann'` for historical CSV rows, `source='api-tennis'` for live-polled rows). `rankings` replaces the old `rankings_history` + `live_rankings` pair. There are no `live_matches` or `live_rankings` tables. The `status` column (`scheduled|live|finished`) tracks a match's lifecycle; `external_id` is the API Tennis deduplication key. Both sources coexist and queries are source-agnostic unless filtering is intentional.
+- **`rankings` has a surrogate PK + two source-scoped partial unique indexes (a key gotcha):** Sackmann rankings **tie** (several players share a rank on the same date when points are equal), so `rank` is *not* unique for historical rows — `uq_rankings_sackmann` enforces one row per `(source, ranking_date, tour, player_id)`. The live feed has unique ranks but possibly-null `player_id`, so `uq_rankings_live` enforces `(source, ranking_date, tour, rank) WHERE source <> 'sackmann'`. Upserts **must** name the matching partial index in their `ON CONFLICT … WHERE` (live upsert in `LiveDataStore.saveRankings`, historical insert in `HistoricalDataLoader.loadRankings`) — a plain `ON CONFLICT (source, ranking_date, tour, rank)` will fail on tied Sackmann data.
 - **Provider isolation:** all upstream specifics live behind `integration/TennisApiAdapter`; everything else
   depends only on the `Normalized*` types — that's what made the RapidAPI→API Tennis swap cheap.
 - **Served order = importance weight:** match + tournament lists are sorted by a computed weight
   (`integration/MatchWeighting` + `TournamentTierRegistry`), so a Grand Slam final leads over a
   later-started 250 match. The feed has **no slam marker or 250/500 size**, so tier comes from a curated
   `resources/tournament-tiers.json` (matched by name, accent/case-insensitive) with the feed `category` as
-  fallback; juniors are classified first. Sorting is applied on read in `LiveDataStore`/`TournamentStore`.
+  fallback; juniors are classified first. Surface is resolved the same way via `TournamentSurfaceRegistry` +
+  `resources/tournament-surfaces.json`. Sorting is applied on read in `LiveDataStore`/`TournamentStore`.
+- **Enrichment queue:** the API Tennis feed rarely supplies `surface`. After each tournament sync, any
+  tournament with `surface IS NULL` is queued in the `enrichment_queue` table. `EnrichmentJob` (default
+  00:20 UTC, or `POST /api/admin/enrichment/run`) processes tasks via `DeterministicEnricher`, which does a
+  registry lookup and — if found — writes the surface to `tournaments` and back-fills it onto API Tennis
+  `matches` rows for that tournament. Tasks exhaust after 3 failed attempts; Phase 3 will add an LLM agent
+  pass between deterministic failure and exhaustion. `TournamentStore.upsert()` uses
+  `COALESCE(EXCLUDED.surface, tournaments.surface)` so re-syncs never clobber an enriched value.
 - **Match view + live chat:** a score card opens `/matches/{externalId}` (detail header — flags, rank, serve,
   approx elapsed/duration). Below it a **cache-only** chat (`chat/ChatStore`: Redis hashes/lists/zsets, 1-day
   TTL, **never** persisted to Postgres): threads + messages, real-time over **SSE** (`chat/ChatEventHub` —
@@ -65,7 +77,23 @@ sits just above OS env vars so values resolve reliably, below command-line args)
 - **Reconciliation never blocks serving:** unmapped players fall back to the upstream display name; the hard
   residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`) classifies
   that queue against a rebuilt candidate set — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`)
-  and also on-demand via `POST /api/admin/reconcile/tier3`.
+  and also on-demand via `POST /api/admin/reconcile/tier3`. A human reviewer works the residue on the
+  admin-only **`/admin`** page (nav link shown only when `admin`): it lists the unmapped queue and, per row,
+  pulls candidate canonical players from `GET /api/admin/unmapped-entities/candidates` (same
+  `CandidateFinder.bySurname` set the cascade uses, rebuilt from the row's stored tour+name) and confirms a
+  pick via `POST /api/admin/entity-map` — which becomes a free Tier-0 cache hit next time.
+- **Upstream resilience (serve last-good):** the read path never touches the upstream — it serves Redis-first,
+  Postgres-fallback — so an outage degrades to stale-but-served. The *write* path is what's guarded:
+  `ApiTennisAdapter.resultOf` throws `UpstreamApiException` on an error envelope (`success != 1`) or missing
+  body so an error is never mistaken for a legit empty result (which would wipe live/recent rows); each
+  poller's `@Scheduled` wraps its `poll()/sync()` in `runCatching` (logs + keeps last-good), while the
+  on-demand admin trigger still propagates failures; and stores skip empty writes (`saveRankings` early-returns
+  on empty, `TournamentStore.upsert` already did) so a failed refresh can't clobber the cache.
+- **Upstream rate limiting:** every call through the tennis `RestClient` passes `UpstreamRateLimiter` (a
+  thread-safe token bucket, applied as a request interceptor in `RestClientConfig`). It's a *safety cap* on
+  the ~8,000/day quota, not a tight throttle — config via `app.tennis-api.rate-limit-per-minute` /
+  `-burst` / `-max-wait-seconds`; `acquire()` blocks briefly for a permit and throws `UpstreamApiException`
+  past the max wait (so a saturated limiter degrades to "skip this poll, keep last-good", caught by the poller).
 - **The LLM is grounded only:** it writes narrative around a DB-built fact sheet (the authoritative spine
   for scores/names), never from its own memory. It blends in **scraped full-text tennis news**
   (`NewsSource`/`ScrapedNewsSource` + a per-site `SiteScraper`, e.g. `TennisDotComScraper`) for cited
@@ -80,6 +108,10 @@ sits just above OS env vars so values resolve reliably, below command-line args)
 
 ## Verifying changes
 - `.\gradlew.bat build` runs the unit + Testcontainers integration tests.
+- Run a single test class or method via Gradle's `--tests` filter (Docker must be up for integration tests):
+  `.\gradlew.bat test --tests "com.tenniscompanion.insight.DigestParsingTest"` (whole class) or
+  `... --tests "com.tenniscompanion.insight.DigestParsingTest.someMethod"` (one method). Wildcards work:
+  `--tests "*Reconciliation*"`.
 - For live checks, run the backend on **:8081** (`$env:SERVER_PORT = "8081"`) so you don't clobber a running
   :8080 instance, then exercise the admin flow (log in as admin → `POST /api/admin/poll/*`,
   `POST /api/admin/insights/generate`) and read the public endpoints / inspect the DB.

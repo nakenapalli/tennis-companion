@@ -14,7 +14,9 @@ import com.tenniscompanion.poller.LiveScorePoller
 import com.tenniscompanion.poller.RankingsPoller
 import com.tenniscompanion.poller.RecentScoresJob
 import com.tenniscompanion.poller.TournamentSyncJob
+import com.tenniscompanion.reconcile.CandidateFinder
 import com.tenniscompanion.reconcile.EntityMapStore
+import com.tenniscompanion.reconcile.NameNormalizer
 import com.tenniscompanion.reconcile.Tier3ReconciliationJob
 import com.tenniscompanion.reconcile.Tier3Summary
 import com.tenniscompanion.reconcile.UnmappedEntity
@@ -29,6 +31,15 @@ import org.springframework.web.bind.annotation.RestController
 
 data class ConfirmMappingRequest(val source: String, val externalPlayerId: String, val playerId: UUID)
 
+/** A canonical player offered as a possible mapping for an unmapped upstream entity (review UI). */
+data class ReviewCandidate(
+    val playerId: UUID,
+    val sackmannId: Long?,
+    val name: String,
+    val country: String?,
+    val birthYear: Int?,
+)
+
 /**
  * Admin: reconciliation review queue + on-demand poll triggers (the free tier is ~50 req/day, so we
  * poll deliberately rather than on a cron). Gated to ROLE_ADMIN in SecurityConfig (the admin path).
@@ -37,6 +48,7 @@ data class ConfirmMappingRequest(val source: String, val externalPlayerId: Strin
 @RequestMapping("/api/admin")
 class AdminController(
     private val store: EntityMapStore,
+    private val candidateFinder: CandidateFinder,
     private val tier3Job: Tier3ReconciliationJob,
     private val liveScorePoller: LiveScorePoller,
     private val rankingsPoller: RankingsPoller,
@@ -53,6 +65,32 @@ class AdminController(
     @GetMapping("/unmapped-entities")
     fun unmapped(@RequestParam(defaultValue = "100") limit: Int): List<UnmappedEntity> =
         store.unmapped(limit.coerceIn(1, 500))
+
+    /**
+     * Candidate canonical players for one unmapped entity, for the human-review UI. Rebuilds the same
+     * surname-blocked candidate set the live cascade and Tier 3 use (from the row's stored tour + name),
+     * so a reviewer sees exactly what the matcher considered. Empty if the row is unknown, has no tour,
+     * or its surname isn't in the historical set.
+     */
+    @GetMapping("/unmapped-entities/candidates")
+    fun candidates(
+        @RequestParam source: String,
+        @RequestParam externalPlayerId: String,
+    ): List<ReviewCandidate> {
+        val row = store.queueRow(source, externalPlayerId) ?: return emptyList()
+        val tour = row.tour ?: return emptyList()
+        val tokens = NameNormalizer.tokens(row.externalName ?: "")
+        if (tokens.isEmpty()) return emptyList()
+        return candidateFinder.bySurname(tour, tokens).map {
+            ReviewCandidate(
+                playerId = it.playerId,
+                sackmannId = it.sackmannId,
+                name = listOfNotNull(it.firstName, it.lastName).joinToString(" ").trim(),
+                country = it.countryCode,
+                birthYear = it.birthYear,
+            )
+        }
+    }
 
     @PostMapping("/entity-map")
     fun confirm(@RequestBody req: ConfirmMappingRequest): Map<String, Any> {

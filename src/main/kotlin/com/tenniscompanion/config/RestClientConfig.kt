@@ -1,5 +1,6 @@
 package com.tenniscompanion.config
 
+import com.tenniscompanion.integration.UpstreamRateLimiter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -19,10 +20,15 @@ class RestClientConfig {
      */
     @Bean
     @Primary
-    fun tennisApiRestClient(props: TennisApiProperties): RestClient =
+    fun tennisApiRestClient(props: TennisApiProperties, rateLimiter: UpstreamRateLimiter): RestClient =
         RestClient.builder()
             .baseUrl(props.baseUrl)
             .defaultHeader("Accept-Encoding", "identity")
+            // Every upstream call passes the client-side rate limiter first (blocks briefly for a permit).
+            .requestInterceptor { request, body, execution ->
+                rateLimiter.acquire()
+                execution.execute(request, body)
+            }
             .build()
 
     /** RestClient for the Anthropic Messages API (LLM digest / reconciliation). Key + version headers. */

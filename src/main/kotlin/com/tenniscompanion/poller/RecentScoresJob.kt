@@ -24,7 +24,8 @@ class RecentScoresJob(
 
     @Scheduled(fixedDelayString = "\${app.poll.recent-interval:PT15M}")
     fun scheduled() {
-        if (props.enabled && feed.key.isNotBlank()) sync()
+        if (!props.enabled || feed.key.isBlank()) return
+        runCatching { sync() }.onFailure { log.warn("Recent scores sync skipped (upstream error): {}", it.message) }
     }
 
     fun sync(): Int {

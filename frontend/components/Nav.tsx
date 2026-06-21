@@ -12,7 +12,7 @@ const LINKS: [string, string][] = [
 ];
 
 export function Nav() {
-  const { token, email, logout } = useAuth();
+  const { token, email, admin, logout } = useAuth();
   const path = usePathname();
   return (
     <nav className="nav">
@@ -26,6 +26,9 @@ export function Nav() {
           ))}
         </div>
         <div className="nav-auth">
+          {admin && (
+            <Link href="/admin" className={path === "/admin" ? "active" : ""}>Review</Link>
+          )}
           <Link href="/settings" className={path === "/settings" ? "active" : ""}>Settings</Link>
           {token ? (
             <>

@@ -21,7 +21,8 @@ class RankingsPoller(
 
     @Scheduled(cron = "\${POLL_RANKINGS_CRON:0 0 6 * * *}")
     fun scheduled() {
-        if (props.enabled) poll()
+        if (!props.enabled) return
+        runCatching { poll() }.onFailure { log.warn("Rankings poll skipped (upstream error): {}", it.message) }
     }
 
     /** Returns rows persisted per tour. Two upstream calls (ATP + WTA). */

@@ -34,7 +34,7 @@ class ApiTennisAdapter(
             b.queryParam("method", "get_standings").queryParam("APIkey", props.key)
                 .queryParam("event_type", tour.uppercase()).build()
         }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<StandingDto>>>() {})
-        return resp?.result.orEmpty().mapNotNull { toRanking(it, tour.uppercase()) }
+        return resultOf("get_standings", resp).orEmpty().mapNotNull { toRanking(it, tour.uppercase()) }
     }
 
     /**
@@ -73,7 +73,7 @@ class ApiTennisAdapter(
             b.queryParam("method", method).queryParam("APIkey", props.key)
                 .queryParam("timezone", "UTC").build()
         }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<FixtureDto>>>() {})
-        return resp?.result.orEmpty()
+        return resultOf(method, resp).orEmpty()
     }
 
     private fun fixturesRange(start: String, end: String): List<FixtureDto> {
@@ -82,7 +82,25 @@ class ApiTennisAdapter(
                 .queryParam("date_start", start).queryParam("date_stop", end)
                 .queryParam("timezone", "UTC").build()
         }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<FixtureDto>>>() {})
-        return resp?.result.orEmpty()
+        return resultOf("get_fixtures", resp).orEmpty()
+    }
+
+    /**
+     * Unwraps the api-tennis envelope, distinguishing a *failure* from a legitimately empty result. The
+     * feed returns `success: 1` on success (the payload may still be an empty list — e.g. nothing live)
+     * and `success: 0` with an `error` message on failure, often with an HTTP 200 — so we can't rely on
+     * the status code alone. Anything that isn't a clean success throws [UpstreamApiException] so the
+     * poll path skips the write and keeps the last-good snapshot, instead of treating an error as
+     * "nothing is happening" and wiping live/recent data. A clean success with a null/empty result is
+     * returned as-is (genuinely empty).
+     */
+    internal fun <T> resultOf(method: String, resp: ApiTennisResponse<T>?): T? {
+        if (resp == null) throw UpstreamApiException("api-tennis '$method' returned no body")
+        // `success` is sometimes absent on valid payloads; only an explicit non-1 value is a failure.
+        if (resp.success != null && resp.success != 1) {
+            throw UpstreamApiException("api-tennis '$method' failed (success=${resp.success})")
+        }
+        return resp.result
     }
 
     // --- mapping (internal so it's unit-testable from hand-built DTOs, no HTTP) ---

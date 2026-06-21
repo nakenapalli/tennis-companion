@@ -25,7 +25,10 @@ class LiveScorePoller(
 
     @Scheduled(fixedDelayString = "\${app.poll.live-interval:PT1M}")
     fun scheduled() {
-        if (props.enabled && feed.key.isNotBlank()) poll()
+        if (!props.enabled || feed.key.isBlank()) return
+        // Never let an upstream outage propagate out of the scheduled thread: log and keep last-good
+        // data (the read path already serves from Redis/Postgres, never upstream).
+        runCatching { poll() }.onFailure { log.warn("Live poll skipped (upstream error): {}", it.message) }
     }
 
     fun poll(): Int {

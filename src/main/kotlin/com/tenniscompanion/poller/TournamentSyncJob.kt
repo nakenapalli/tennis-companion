@@ -22,7 +22,8 @@ class TournamentSyncJob(
 
     @Scheduled(cron = "\${POLL_TOURNAMENTS_CRON:0 30 6 * * *}")
     fun scheduled() {
-        if (props.enabled) sync()
+        if (!props.enabled) return
+        runCatching { sync() }.onFailure { log.warn("Tournament sync skipped (upstream error): {}", it.message) }
     }
 
     fun sync(): Int {

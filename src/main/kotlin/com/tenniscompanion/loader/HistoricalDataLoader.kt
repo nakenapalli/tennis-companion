@@ -90,7 +90,8 @@ class HistoricalDataLoader(
         val sql = """
             INSERT INTO rankings(source, ranking_date, tour, rank, player_id, points)
             VALUES ('sackmann', ?,?,?,?::uuid,?)
-            ON CONFLICT (source, ranking_date, tour, rank) DO NOTHING
+            -- Sackmann ranks can tie; the one-row-per-player key is what's unique (see V10).
+            ON CONFLICT (source, ranking_date, tour, player_id) WHERE source = 'sackmann' DO NOTHING
         """.trimIndent()
         val n = load(file, sql) { r ->
             val date = parseDate(r.opt("ranking_date")) ?: return@load null

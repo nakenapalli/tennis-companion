@@ -4,6 +4,7 @@ import com.tenniscompanion.config.TennisApiProperties
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
@@ -34,6 +35,23 @@ class ApiTennisAdapterTest {
         assertEquals("ITF", adapter.categoryOf("Itf Women Singles"))
         assertEquals("Junior", adapter.categoryOf("Boys Singles"))
         assertNull(adapter.categoryOf(null))
+    }
+
+    @Test
+    fun `resultOf unwraps a successful envelope and tolerates a missing success flag`() {
+        assertEquals(listOf("a"), adapter.resultOf("m", ApiTennisResponse(success = 1, result = listOf("a"))))
+        // `success` is sometimes absent on valid payloads — that must not be treated as a failure.
+        assertEquals(listOf("a"), adapter.resultOf("m", ApiTennisResponse(success = null, result = listOf("a"))))
+    }
+
+    @Test
+    fun `resultOf throws on an error envelope or missing body so the poll path keeps last-good data`() {
+        assertThrows(UpstreamApiException::class.java) {
+            adapter.resultOf<List<String>>("m", ApiTennisResponse(success = 0, result = null))
+        }
+        assertThrows(UpstreamApiException::class.java) {
+            adapter.resultOf<List<String>>("m", null)
+        }
     }
 
     @Test

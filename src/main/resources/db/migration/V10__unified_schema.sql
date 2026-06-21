@@ -98,8 +98,17 @@ UPDATE rankings SET player_uuid = p.id FROM players p WHERE rankings.player_id =
 ALTER TABLE rankings DROP COLUMN player_id;
 ALTER TABLE rankings RENAME COLUMN player_uuid TO player_id;
 
--- New PK: unique ranking position per source, day, and tour
-ALTER TABLE rankings ADD PRIMARY KEY (source, ranking_date, tour, rank);
+-- A ranking row's natural identity differs by source, so we use a surrogate PK and enforce each
+-- source's real key with a PARTIAL unique index:
+--   • Live feed (api-tennis): one player per rank → (source, ranking_date, tour, rank) is unique,
+--     but player_id may be null (not yet reconciled).
+--   • Sackmann historical: ranks can TIE (several players share a rank on a date when points are
+--     equal), so rank is NOT unique — the one-row-per-player key (…, player_id) is.
+ALTER TABLE rankings ADD COLUMN id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+CREATE UNIQUE INDEX uq_rankings_live ON rankings (source, ranking_date, tour, rank)
+    WHERE source <> 'sackmann';
+CREATE UNIQUE INDEX uq_rankings_sackmann ON rankings (source, ranking_date, tour, player_id)
+    WHERE source = 'sackmann';
 CREATE INDEX idx_rankings_player ON rankings (player_id, tour);
 
 -- ─── 6. UUID REFERENCES — entity_map ──────────────────────────────────────

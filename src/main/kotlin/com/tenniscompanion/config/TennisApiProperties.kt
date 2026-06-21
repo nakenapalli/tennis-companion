@@ -7,6 +7,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class TennisApiProperties(
     val baseUrl: String = "https://api.api-tennis.com/tennis/",
     val key: String = "",
+    /**
+     * Client-side rate limit (token bucket, see [com.tenniscompanion.integration.UpstreamRateLimiter]).
+     * A safety cap on the ~8,000/day quota, not a tight throttle: `rateLimitPerMinute` is the steady
+     * refill rate, `rateLimitBurst` the bucket size (allows a short burst like the two-call rankings
+     * poll), and `rateLimitMaxWaitSeconds` how long a call will block for a permit before giving up
+     * (so a saturated limiter degrades to "skip this poll" rather than stalling a thread).
+     */
+    val rateLimitPerMinute: Int = 60,
+    val rateLimitBurst: Int = 10,
+    val rateLimitMaxWaitSeconds: Long = 30,
 )
 
 /**

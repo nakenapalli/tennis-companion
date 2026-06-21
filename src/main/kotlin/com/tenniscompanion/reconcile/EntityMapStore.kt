@@ -108,6 +108,29 @@ class EntityMapStore(private val jdbc: JdbcTemplate) {
             limit,
         )
 
+    /**
+     * A single review-queue row with its stored signals — lets the admin review UI rebuild the same
+     * surname candidate set the live cascade / Tier 3 would use, for one entity on demand.
+     */
+    fun queueRow(source: String, externalId: String): ReconcileQueueRow? =
+        jdbc.query(
+            """
+            SELECT source, external_player_id, external_name, tour, country_code, rank_hint
+            FROM entity_map WHERE source = ? AND external_player_id = ?
+            """.trimIndent(),
+            { rs, _ ->
+                ReconcileQueueRow(
+                    rs.getString("source"),
+                    rs.getString("external_player_id"),
+                    rs.getString("external_name"),
+                    rs.getString("tour"),
+                    rs.getString("country_code"),
+                    (rs.getObject("rank_hint") as? Number)?.toInt(),
+                )
+            },
+            source, externalId,
+        ).firstOrNull()
+
     /** Admin confirms a mapping from the review endpoint. */
     fun confirm(source: String, externalId: String, playerId: UUID) {
         jdbc.update(

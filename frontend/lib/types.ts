@@ -160,3 +160,22 @@ export interface Insight {
   generatedAt: string;
   publishedAt?: string;
 }
+
+/** An upstream player Tiers 0–3 couldn't confidently map — awaiting human review. */
+export interface UnmappedEntity {
+  source: string;
+  externalPlayerId: string;
+  externalName?: string;
+  confidence?: number;
+  tier?: string;
+  rationale?: string;
+}
+
+/** A canonical player offered as a possible mapping for an unmapped entity. */
+export interface ReviewCandidate {
+  playerId: string;
+  sackmannId?: number;
+  name: string;
+  country?: string;
+  birthYear?: number;
+}
