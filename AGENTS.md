@@ -69,11 +69,37 @@ sits just above OS env vars so values resolve reliably, below command-line args)
   pass between deterministic failure and exhaustion. `TournamentStore.upsert()` uses
   `COALESCE(EXCLUDED.surface, tournaments.surface)` so re-syncs never clobber an enriched value.
 - **Match view + live chat:** a score card opens `/matches/{externalId}` (detail header — flags, rank, serve,
-  approx elapsed/duration). Below it a **cache-only** chat (`chat/ChatStore`: Redis hashes/lists/zsets, 1-day
-  TTL, **never** persisted to Postgres): threads + messages, real-time over **SSE** (`chat/ChatEventHub` —
-  public read streams since `EventSource` can't send auth headers; POSTs are authenticated). Threads **lock**
-  when the match is finished. Chat authors are **usernames** (`users.username`, set at registration). This is
-  the one place the app uses SSE (everything else is REST + SWR polling).
+  approx elapsed/duration), then a **condensed one-line Overview** (`MatchOverview`), then all sections
+  **stacked one after another** (no tabs): **Momentum → Stats → Players → Head-to-head**, and (live only)
+  **Discussion** at the bottom. Per-player **colors are assigned once at the page level** (`lib/playerColors.ts`,
+  flag-hue-derived with per-load jitter, kept bright for the dark theme, two hues forced apart) and passed to
+  every section so they stay consistent and re-roll on reload. The
+  **cache-only** chat (`chat/ChatStore`: Redis hashes/lists/zsets, 1-day TTL, **never** persisted to Postgres)
+  is the Discussion tab: threads + messages, real-time over **SSE** (`chat/ChatEventHub` — public read
+  streams since `EventSource` can't send auth headers; POSTs are authenticated). Threads **lock** when the
+  match is finished; chat authors are **usernames** (`users.username`). SSE is used only here (everything
+  else is REST + SWR polling).
+- **Momentum + Stats tabs (`match/` package):** both come from ONE upstream call — `get_fixtures&match_key=…`
+  returns the (undocumented) `statistics` array AND `pointbypoint`, so `MatchDetailService` fetches once,
+  caches the `NormalizedMatchDetail` in Redis (30s live / 12h finished / 5-min empty-sentinel for stats-less
+  lower-circuit matches), and serves `GET /api/matches/{id}/momentum` + `/stats` (public, 404 when no data).
+  **Momentum** is a *bespoke* metric (`MomentumCalculator`, not a standard stat): a signed, tanh-saturated
+  line blending point micro-impulses, a per-game impulse weighted by game intensity (deuces/pressure points)
+  × set-progress × match-progress (best-of-aware) × a streak multiplier (velocity), plus a break-of-serve
+  shock and per-point decay. The adapter reconstructs each point's winner (the feed omits each game's
+  *deciding* point — credit `serve_winner`; validated to reproduce a real match's 75/65/140 split exactly).
+  The frontend (`components/MatchMomentum.tsx`, Chart.js) graphs it with set brackets + break markers and a
+  hover tooltip showing the running score; **Stats** (`MatchStats.tsx`) is a per-period serve/return/points/
+  games comparison. Stats availability varies by tour (rich on ATP/WTA, often absent on ITF/Challenger).
+- **Overview / Head-to-head / Players tabs:** `MatchDetailService` also serves `GET /api/matches/{id}/h2h`
+  and `/players`. **H2H** uses our Sackmann history (`PlayerService.headToHead`) when both players are
+  reconciled (richer, free), else the live feed's `get_H2H` by player key. **Players** combines the DB
+  profile (hand/height/age/rank) with live `get_players` career splits (titles, W-L, hard/clay/grass) and the
+  player logo. The upstream **player keys** needed for those live lookups come from the same
+  `get_fixtures&match_key` fixture (kept on `NormalizedMatchDetail`), so no schema change was needed. Both
+  responses are Redis-cached (status-based TTL); **Overview** is frontend-only (match facts from the existing
+  detail + a one-line H2H summary). Note the `matchdetail` cache key is **versioned** (`matchdetail:v2:…`) —
+  bump it whenever `NormalizedMatchDetail`'s shape changes so stale Redis entries are ignored.
 - **Reconciliation never blocks serving:** unmapped players fall back to the upstream display name; the hard
   residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`) classifies
   that queue against a rebuilt candidate set — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`)
@@ -81,7 +107,10 @@ sits just above OS env vars so values resolve reliably, below command-line args)
   admin-only **`/admin`** page (nav link shown only when `admin`): it lists the unmapped queue and, per row,
   pulls candidate canonical players from `GET /api/admin/unmapped-entities/candidates` (same
   `CandidateFinder.bySurname` set the cascade uses, rebuilt from the row's stored tour+name) and confirms a
-  pick via `POST /api/admin/entity-map` — which becomes a free Tier-0 cache hit next time.
+  pick via `POST /api/admin/entity-map` — which becomes a free Tier-0 cache hit next time. To disambiguate
+  namesakes the card shows the upstream player's stored **country + rank hint** (from `entity_map`) and, on
+  expand, their **recent results fetched live by player key** (`GET /api/admin/unmapped-entities/upstream-matches`
+  → `TennisApiAdapter.fetchPlayerMatches`, one upstream call, `get_fixtures&player_key=…` over a 180-day window).
 - **Upstream resilience (serve last-good):** the read path never touches the upstream — it serves Redis-first,
   Postgres-fallback — so an outage degrades to stale-but-served. The *write* path is what's guarded:
   `ApiTennisAdapter.resultOf` throws `UpstreamApiException` on an error envelope (`success != 1`) or missing

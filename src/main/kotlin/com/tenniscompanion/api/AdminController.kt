@@ -4,10 +4,14 @@ import com.tenniscompanion.config.NewsProperties
 import com.tenniscompanion.enrichment.EnrichmentJob
 import com.tenniscompanion.enrichment.EnrichmentSummary
 import com.tenniscompanion.insight.DigestStore
+import com.tenniscompanion.insight.MatchFacts
 import com.tenniscompanion.insight.NewsSource
 import com.tenniscompanion.insight.SiteScraper
 import com.tenniscompanion.insight.StoredInsight
 import com.tenniscompanion.insight.WeeklyDigestJob
+import com.tenniscompanion.integration.NormalizedMatch
+import com.tenniscompanion.integration.TennisApiAdapter
+import com.tenniscompanion.integration.UpstreamPlayerProfile
 import java.time.LocalDate
 import java.time.ZoneOffset
 import com.tenniscompanion.poller.LiveScorePoller
@@ -40,6 +44,16 @@ data class ReviewCandidate(
     val birthYear: Int?,
 )
 
+/** One of the upstream player's recent results, shown in review to help recognize who they are. */
+data class UpstreamMatchDto(
+    val date: String?,        // ISO date (UTC) or null
+    val tournamentName: String?,
+    val round: String?,
+    val opponentName: String?,
+    val result: String?,      // "W" | "L" | null (couldn't determine)
+    val score: String?,       // games per set, from this player's perspective ("6-3, 4-6, 7-5")
+)
+
 /**
  * Admin: reconciliation review queue + on-demand poll triggers (the free tier is ~50 req/day, so we
  * poll deliberately rather than on a cron). Gated to ROLE_ADMIN in SecurityConfig (the admin path).
@@ -49,6 +63,7 @@ data class ReviewCandidate(
 class AdminController(
     private val store: EntityMapStore,
     private val candidateFinder: CandidateFinder,
+    private val adapter: TennisApiAdapter,
     private val tier3Job: Tier3ReconciliationJob,
     private val liveScorePoller: LiveScorePoller,
     private val rankingsPoller: RankingsPoller,
@@ -92,10 +107,60 @@ class AdminController(
         }
     }
 
+    /**
+     * The upstream player's recent results, fetched live from the provider by their player key (the
+     * `externalPlayerId`). Lets a reviewer cross-check each candidate against what this player has
+     * actually been doing. One upstream call per lookup; an outage/empty response yields an empty list
+     * (the UI just shows "no recent results") rather than failing the page.
+     */
+    @GetMapping("/unmapped-entities/upstream-matches")
+    fun upstreamMatches(
+        @RequestParam source: String,
+        @RequestParam externalPlayerId: String,
+        @RequestParam(defaultValue = "12") limit: Int,
+    ): List<UpstreamMatchDto> {
+        if (source != adapter.source) return emptyList()
+        val matches = runCatching { adapter.fetchPlayerMatches(externalPlayerId) }.getOrElse { emptyList() }
+        return matches.take(limit.coerceIn(1, 50)).map { toUpstreamMatch(externalPlayerId, it) }
+    }
+
+    /**
+     * The upstream player's profile (country / birth year / rank), fetched live by player key — the
+     * disambiguation signals the live-scores feed never supplied, so they're null in `entity_map` for
+     * most queue rows. Always returns an object (empty on outage/no-profile) so the UI can render it.
+     */
+    @GetMapping("/unmapped-entities/upstream-profile")
+    fun upstreamProfile(
+        @RequestParam source: String,
+        @RequestParam externalPlayerId: String,
+    ): UpstreamPlayerProfile {
+        if (source != adapter.source) return UpstreamPlayerProfile()
+        val profile = runCatching { adapter.fetchPlayerProfile(externalPlayerId) }.getOrNull() ?: UpstreamPlayerProfile()
+        // Enrich the queue row so repeat reviews + Tier 3 read these signals without re-fetching upstream.
+        if (profile.country != null || profile.rank != null || profile.birthYear != null) {
+            store.updateProfile(source, externalPlayerId, profile.country, profile.rank, profile.birthYear)
+        }
+        return profile
+    }
+
+    private fun toUpstreamMatch(playerKey: String, m: NormalizedMatch): UpstreamMatchDto {
+        val mineSide = if (m.player1.externalId == playerKey) "home" else "away"
+        val opponent = if (mineSide == "home") m.player2 else m.player1
+        val winnerSide = MatchFacts.winnerOf(m.score)
+        return UpstreamMatchDto(
+            date = m.startTime?.atZone(ZoneOffset.UTC)?.toLocalDate()?.toString(),
+            tournamentName = m.tournamentName,
+            round = MatchFacts.cleanRound(m.round) ?: m.round,
+            opponentName = opponent.name.ifBlank { null },
+            result = winnerSide?.let { if (it == mineSide) "W" else "L" },
+            score = MatchFacts.scoreFrom(m.score, mineSide).ifBlank { null },
+        )
+    }
+
     @PostMapping("/entity-map")
     fun confirm(@RequestBody req: ConfirmMappingRequest): Map<String, Any> {
-        store.confirm(req.source, req.externalPlayerId, req.playerId)
-        return mapOf("status" to "confirmed", "source" to req.source, "playerId" to req.playerId)
+        val backfilled = store.confirm(req.source, req.externalPlayerId, req.playerId)
+        return mapOf("status" to "confirmed", "source" to req.source, "playerId" to req.playerId, "backfilled" to backfilled)
     }
 
     /** Tier-3 LLM pass over the review queue (offline batch; gated by app.llm.enabled + a key). */

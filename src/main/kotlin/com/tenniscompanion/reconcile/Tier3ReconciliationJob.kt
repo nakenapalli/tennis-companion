@@ -135,6 +135,7 @@ class Tier3ReconciliationJob(
         val observed = buildMap<String, Any?> {
             row.countryCode?.let { put("country", it) }
             row.rankHint?.let { put("current_rank_hint", it) }
+            row.birthYear?.let { put("birth_year", it) }
         }
         val external = Tier3ExternalEntity(row.source, row.externalPlayerId, row.externalName, tour, observed)
         val views = cands.map {

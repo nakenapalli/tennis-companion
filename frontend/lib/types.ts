@@ -102,6 +102,112 @@ export interface MatchDetail extends LiveMatch {
   endedAt?: string;
 }
 
+/** Momentum-tab payload (bespoke metric over the point-by-point flow). */
+export interface MomentumPoint {
+  x: number; // points played
+  y: number; // signed momentum, + = player1, − = player2 (−1..1)
+  sets: string; // completed-set games, e.g. "6-3"
+  games: string; // current-set games "4-3"
+  points: string; // in-game point score "30-15" ("" on a game-ending sample)
+}
+export interface MomentumBreak {
+  x: number;
+  y: number;
+  by: number; // 1 | 2
+}
+export interface MomentumSet {
+  label: string;
+  score: string;
+  startX: number;
+  endX: number;
+}
+export interface MomentumMeta {
+  largestStreak: number;
+  streakSide: number;
+  streakStartX: number;
+  streakEndX: number;
+  heaviestGame: string;
+  heaviestStartX: number;
+  heaviestEndX: number;
+  biggestSwing: number;
+  swingSide: number;
+  swingX: number;
+}
+export interface Momentum {
+  bestOf: number;
+  player1: string;
+  player2: string;
+  series: MomentumPoint[];
+  breaks: MomentumBreak[];
+  sets: MomentumSet[];
+  meta: MomentumMeta;
+}
+
+/** Head-to-head tab payload. */
+export interface H2hMeeting {
+  date?: string;
+  tournament?: string;
+  round?: string;
+  surface?: string;
+  winner: number; // 1 | 2
+  score?: string;
+}
+export interface H2hView {
+  player1: string;
+  player2: string;
+  p1Wins: number;
+  p2Wins: number;
+  source: string; // "historical" | "live"
+  meetings: H2hMeeting[];
+}
+
+/** Players tab payload: side-by-side bios. */
+export interface PlayerBio {
+  name: string;
+  country?: string;
+  hand?: string;
+  heightCm?: number;
+  age?: number;
+  rank?: number;
+  logo?: string;
+  season?: string;
+  titles?: number;
+  wins?: number;
+  losses?: number;
+  hardWins?: number;
+  hardLosses?: number;
+  clayWins?: number;
+  clayLosses?: number;
+  grassWins?: number;
+  grassLosses?: number;
+}
+export interface PlayersView {
+  player1: PlayerBio;
+  player2: PlayerBio;
+}
+
+/** Stats-tab payload: per-period (match/set1/…) groups of comparison rows. */
+export interface StatCell {
+  value: string | null;
+  won: number | null;
+  total: number | null;
+}
+export interface StatRow {
+  name: string;
+  p1: StatCell;
+  p2: StatCell;
+}
+export interface StatGroup {
+  type: string;
+  rows: StatRow[];
+}
+export interface MatchStats {
+  player1: string;
+  player2: string;
+  periods: string[];
+  groups: Record<string, StatGroup[]>;
+}
+
 export interface ChatMessage {
   id: string;
   authorName: string;
@@ -166,6 +272,9 @@ export interface UnmappedEntity {
   source: string;
   externalPlayerId: string;
   externalName?: string;
+  country?: string; // upstream IOC code — stored from the rankings feed or an enriched profile
+  rankHint?: number; // upstream rank — stored from the rankings feed or an enriched profile
+  birthYear?: number; // enriched from the upstream profile; persisted so repeat views are free
   confidence?: number;
   tier?: string;
   rationale?: string;
@@ -178,4 +287,21 @@ export interface ReviewCandidate {
   name: string;
   country?: string;
   birthYear?: number;
+}
+
+/** The upstream player's profile, fetched live in review to disambiguate namesakes. */
+export interface UpstreamProfile {
+  country?: string; // IOC code
+  birthYear?: number;
+  rank?: number;
+}
+
+/** One of the upstream player's recent results, shown in review to help recognize them. */
+export interface UpstreamMatch {
+  date?: string;
+  tournamentName?: string;
+  round?: string;
+  opponentName?: string;
+  result?: string; // "W" | "L"
+  score?: string;
 }

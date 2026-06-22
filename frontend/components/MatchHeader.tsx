@@ -16,7 +16,7 @@ export function MatchHeader({ m }: { m: MatchDetail }) {
   return (
     <section className="card match-header">
       <div className="match-top">
-        <span className={`badge ${live ? "live" : "final"}`}>{live ? "● Live" : "Final"}</span>
+        <span className={`badge ${live ? "live" : "final"}`}>{live ? "● Live" : "Completed"}</span>
         <span className="match-meta">
           {m.tournamentName && <span className="tag">{m.tournamentName}</span>}
           <TierBadge tier={m.tier} tour={m.tour} detailed />

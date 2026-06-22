@@ -29,7 +29,7 @@ export function MatchCard({ m, grouped = false }: { m: LiveMatch; grouped?: bool
       }}
     >
       <div className="match-top">
-        <span className={`badge ${live ? "live" : "final"}`}>{live ? "● Live" : "Final"}</span>
+        <span className={`badge ${live ? "live" : "final"}`}>{live ? "● Live" : "Completed"}</span>
         <span className="match-meta">
           {!grouped && m.tournamentName &&
             (m.tournamentId != null ? (

@@ -68,6 +68,205 @@ class ApiTennisAdapter(
         return capRecent(finished)
     }
 
+    /**
+     * One upstream player's recent singles results, keyed by their api-tennis player id (the same
+     * `event_first_player`/`second_player` key the reconciliation engine sees). `get_fixtures` accepts a
+     * `player_key` filter, so this reuses the fixtures shape + [toMatch] mapping over a recent window.
+     * Finished singles only, most-recent first — that's what helps a reviewer recognize the player.
+     */
+    override fun fetchPlayerMatches(playerKey: String): List<NormalizedMatch> {
+        if (playerKey.isBlank()) return emptyList()
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_fixtures").queryParam("APIkey", props.key)
+                .queryParam("player_key", playerKey)
+                .queryParam("date_start", today.minusDays(PLAYER_MATCH_WINDOW_DAYS).toString())
+                .queryParam("date_stop", today.toString())
+                .queryParam("timezone", "UTC").build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<FixtureDto>>>() {})
+        return resultOf("get_fixtures", resp).orEmpty()
+            .filter(::isSingles)
+            .mapNotNull(::toMatch)
+            .filter { it.status == "finished" }
+            .sortedByDescending { it.startTime }
+    }
+
+    /**
+     * One upstream player's profile via `get_players&player_key=…` — country, birth year, and current
+     * singles rank — for the review UI to disambiguate namesakes. The live-scores feed carries none of
+     * this, so it's fetched on demand by key. Country is mapped to IOC (like standings); birth year is
+     * pulled from the "dd.mm.yyyy" `player_bday`; rank is the latest-season singles `stats` row.
+     */
+    override fun fetchPlayerProfile(playerKey: String): UpstreamPlayerProfile? {
+        if (playerKey.isBlank()) return null
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_players").queryParam("APIkey", props.key)
+                .queryParam("player_key", playerKey).build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<PlayerDto>>>() {})
+        val p = resultOf("get_players", resp).orEmpty().firstOrNull() ?: return null
+        return UpstreamPlayerProfile(
+            country = CountryCodes.toIoc(p.country),
+            birthYear = p.birthday?.let { YEAR.find(it)?.value?.toIntOrNull() },
+            rank = p.stats.orEmpty()
+                .filter { it.type?.contains("single", ignoreCase = true) == true }
+                .maxByOrNull { it.season ?: "" }
+                ?.rank?.toIntOrNull(),
+        )
+    }
+
+    /**
+     * Full detail for one match via `get_fixtures&match_key=…`. That single call returns the fixture
+     * (with both player keys), the `statistics` array, and `pointbypoint` — so we resolve every stat row
+     * and game to side 1 (first player) / side 2 (second player) here, and reconstruct each listed point's
+     * winner. The player keys are kept so the H2H / career tabs can look players up on demand. Null only
+     * when the fixture itself is missing (games/stats may be empty on lower circuits, but the keys are still
+     * useful).
+     */
+    override fun fetchMatchDetail(eventKey: String): NormalizedMatchDetail? {
+        if (eventKey.isBlank()) return null
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_fixtures").queryParam("APIkey", props.key)
+                .queryParam("match_key", eventKey).queryParam("timezone", "UTC").build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<FixtureDto>>>() {})
+        val f = resultOf("get_fixtures", resp).orEmpty().firstOrNull() ?: return null
+
+        val games = f.pointByPoint.orEmpty().mapNotNull(::toGame)
+        val stats = f.statistics.orEmpty().mapNotNull { s -> toStat(s, f.firstPlayerKey) }
+        return NormalizedMatchDetail(games, stats, f.firstPlayerKey, f.secondPlayerKey)
+    }
+
+    /**
+     * Prior meetings between two players via `get_H2H`. The entries are fixtures (with per-set `scores`),
+     * each carrying its own first/second player — so we resolve the winner and the scoreline relative to
+     * `key1` (side 1). Meetings without a decided winner (e.g. in-progress) are dropped.
+     */
+    override fun fetchH2H(key1: String, key2: String): List<NormalizedH2HMatch> {
+        if (key1.isBlank() || key2.isBlank()) return emptyList()
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_H2H").queryParam("APIkey", props.key)
+                .queryParam("first_player_key", key1).queryParam("second_player_key", key2).build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<H2HResultDto>>() {})
+        return resultOf("get_H2H", resp)?.h2h.orEmpty().mapNotNull { toH2HMatch(it, key1) }
+    }
+
+    internal fun toH2HMatch(f: FixtureDto, key1: String): NormalizedH2HMatch? {
+        val winnerKey = when {
+            f.winner.equals("First Player", ignoreCase = true) -> f.firstPlayerKey
+            f.winner.equals("Second Player", ignoreCase = true) -> f.secondPlayerKey
+            else -> null
+        } ?: return null
+        val key1IsFirst = f.firstPlayerKey == key1
+        val score = f.scores.orEmpty()
+            .sortedBy { it.scoreSet?.toIntOrNull() ?: 0 }
+            .mapNotNull { s ->
+                val a = games(s.scoreFirst)
+                val b = games(s.scoreSecond)
+                if (a == null || b == null) null else if (key1IsFirst) "$a-$b" else "$b-$a"
+            }
+            .joinToString(", ").ifBlank { null }
+        return NormalizedH2HMatch(
+            date = f.eventDate,
+            tournament = f.tournamentName,
+            round = f.tournamentRound?.substringAfterLast(" - ")?.trim()?.ifBlank { null },
+            winnerSide = if (winnerKey == key1) 1 else 2,
+            score = score,
+        )
+    }
+
+    /** A player's latest-season singles career line via `get_players` (titles, W-L, surface splits). */
+    override fun fetchPlayerCareer(playerKey: String): NormalizedPlayerCareer? {
+        if (playerKey.isBlank()) return null
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_players").queryParam("APIkey", props.key)
+                .queryParam("player_key", playerKey).build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<PlayerDto>>>() {})
+        val p = resultOf("get_players", resp).orEmpty().firstOrNull() ?: return null
+        val latest = p.stats.orEmpty()
+            .filter { it.type?.contains("single", ignoreCase = true) == true }
+            .maxByOrNull { it.season ?: "" }
+        return NormalizedPlayerCareer(
+            country = CountryCodes.toIoc(p.country),
+            birthYear = p.birthday?.let { YEAR.find(it)?.value?.toIntOrNull() },
+            rank = latest?.rank?.toIntOrNull(),
+            logo = p.logo,
+            season = latest?.season,
+            titles = latest?.titles?.toIntOrNull(),
+            wins = latest?.matchesWon?.toIntOrNull(),
+            losses = latest?.matchesLost?.toIntOrNull(),
+            hardWins = latest?.hardWon?.toIntOrNull(),
+            hardLosses = latest?.hardLost?.toIntOrNull(),
+            clayWins = latest?.clayWon?.toIntOrNull(),
+            clayLosses = latest?.clayLost?.toIntOrNull(),
+            grassWins = latest?.grassWon?.toIntOrNull(),
+            grassLosses = latest?.grassLost?.toIntOrNull(),
+        )
+    }
+
+    /** "First Player" → 1, "Second Player" → 2 (used for serve/winner and stat player keys). */
+    private fun sideOfLabel(label: String?): Int? = when {
+        label == null -> null
+        label.contains("First", ignoreCase = true) -> 1
+        label.contains("Second", ignoreCase = true) -> 2
+        else -> null
+    }
+
+    internal fun toStat(s: StatisticDto, firstPlayerKey: String?): NormalizedStat? {
+        val side = if (s.playerKey != null && s.playerKey == firstPlayerKey) 1 else 2
+        val name = s.statName ?: return null
+        return NormalizedStat(
+            side = side,
+            period = s.statPeriod ?: "match",
+            type = s.statType ?: "Other",
+            name = name,
+            value = s.statValue,
+            won = s.statWon,
+            total = s.statTotal,
+        )
+    }
+
+    internal fun toGame(g: PbpGameDto): NormalizedGame? {
+        val server = sideOfLabel(g.playerServed) ?: return null
+        val winner = sideOfLabel(g.serveWinner) ?: return null
+        val setNo = g.setNumber?.substringAfterLast(' ')?.toIntOrNull() ?: 1
+        val gameNo = g.numberGame?.toIntOrNull() ?: 0
+        var prev = 0 to 0
+        val points = g.points.orEmpty().map { p ->
+            val cur = parsePointScore(p.score)
+            val w = if (cur == null) null else pointWinner(prev, cur)
+            if (cur != null) prev = cur
+            NormalizedGamePoint(
+                winnerSide = w,
+                label = p.score?.replace(" ", "") ?: "",
+                breakPoint = !p.breakPoint.isNullOrBlank(),
+                setPoint = !p.setPoint.isNullOrBlank(),
+                matchPoint = !p.matchPoint.isNullOrBlank(),
+            )
+        }
+        return NormalizedGame(setNo, gameNo, server, winner, points)
+    }
+
+    /** Map a "30 - 15" in-game score to numeric ranks (0,15,30,40→0..3; A/AD→4). Null if unparseable. */
+    private fun parsePointScore(score: String?): Pair<Int, Int>? {
+        val parts = score?.split("-")?.map { it.trim() } ?: return null
+        if (parts.size != 2) return null
+        val a = POINT_RANK[parts[0]] ?: return null
+        val b = POINT_RANK[parts[1]] ?: return null
+        return a to b
+    }
+
+    /** Who won the point given the (prev → cur) in-game score, handling deuce regress (advantage lost). */
+    private fun pointWinner(prev: Pair<Int, Int>, cur: Pair<Int, Int>): Int? {
+        val da = cur.first - prev.first
+        val db = cur.second - prev.second
+        return when {
+            da > 0 && db <= 0 -> 1
+            db > 0 && da <= 0 -> 2
+            prev.first == 4 && cur.first == 3 -> 2 // side 1 lost its advantage
+            prev.second == 4 && cur.second == 3 -> 1
+            else -> null
+        }
+    }
+
     private fun fixtures(method: String): List<FixtureDto> {
         val resp = client.get().uri { b ->
             b.queryParam("method", method).queryParam("APIkey", props.key)
@@ -299,6 +498,11 @@ class ApiTennisAdapter(
 
     private companion object {
         const val RECENT_LOWER_CAP = 40 // lower-circuit results kept per refresh; main tour is uncapped
+        const val PLAYER_MATCH_WINDOW_DAYS = 180L // lookback for a player's recent results in the review UI
+        val YEAR = Regex("\\d{4}") // first 4-digit run in a "dd.mm.yyyy" birth date
+
+        // In-game point scores → numeric rank; advantage ("A"/"AD") shares 4 with the deuce-regress logic.
+        val POINT_RANK = mapOf("0" to 0, "15" to 1, "30" to 2, "40" to 3, "A" to 4, "AD" to 4)
 
         // "1/16-finals", "1/8 Finals", etc. — the denominator is captured; separators/case are lenient.
         val FRACTION_ROUND = Regex("^1/(\\d+)[\\s-]*finals?$", RegexOption.IGNORE_CASE)

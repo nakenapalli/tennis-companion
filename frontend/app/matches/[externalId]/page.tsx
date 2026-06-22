@@ -1,18 +1,32 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo, type ReactNode } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher } from "@/lib/api";
+import { pickPlayerColors, type PlayerColors } from "@/lib/playerColors";
 import type { MatchDetail } from "@/lib/types";
 import { MatchHeader } from "@/components/MatchHeader";
 import { MatchChat } from "@/components/MatchChat";
+import { MatchMomentum } from "@/components/MatchMomentum";
+import { MatchStats } from "@/components/MatchStats";
+import { MatchOverview } from "@/components/MatchOverview";
+import { MatchH2H } from "@/components/MatchH2H";
+import { MatchPlayers } from "@/components/MatchPlayers";
 
 export default function MatchPage() {
   const { externalId } = useParams<{ externalId: string }>();
   // Keep the score fresh while live; the chat manages its own live updates over SSE.
   const { data, error, isLoading } = useSWR<MatchDetail>(`/api/matches/${externalId}`, fetcher, { refreshInterval: 15000 });
+
+  // Assign each player a flag-derived color ONCE per match load, here at the page level, so every section
+  // shares the same two colors. Memoized on the countries so it's stable across live refreshes, but
+  // re-rolls on a fresh page load.
+  const colors = useMemo(
+    () => pickPlayerColors(data?.player1?.country, data?.player2?.country),
+    [externalId, data?.player1?.country, data?.player2?.country],
+  );
 
   return (
     <div>
@@ -24,22 +38,50 @@ export default function MatchPage() {
       ) : (
         <>
           <MatchHeader m={data} />
-          {/* A finished match's chat is locked and adds nothing, so it's hidden entirely — only show it live. */}
-          {data.status !== "finished" && (
-            // useSearchParams must sit under a Suspense boundary for the production build to prerender the page.
-            <Suspense fallback={null}>
-              <ChatSection matchId={externalId} />
-            </Suspense>
-          )}
+          <MatchOverview match={data} />
+          {/* useSearchParams must sit under a Suspense boundary for the production build to prerender. */}
+          <Suspense fallback={null}>
+            <MatchSections externalId={externalId} match={data} colors={colors} />
+          </Suspense>
         </>
       )}
     </div>
   );
 }
 
-/** Reads an optional `?thread=` deep-link (e.g. from a tournament's Threads tab) and opens it directly. */
-function ChatSection({ matchId }: { matchId: string }) {
-  const initialThreadId = useSearchParams().get("thread");
-  // Only rendered for in-progress matches, so chat is never locked here.
-  return <MatchChat matchId={matchId} locked={false} initialThreadId={initialThreadId} />;
+/** All match-detail sections stacked one after another (no tabs). */
+function MatchSections({ externalId, match, colors }: { externalId: string; match: MatchDetail; colors: PlayerColors }) {
+  const threadParam = useSearchParams().get("thread"); // deep-link from a tournament's Threads tab
+  const live = match.status === "live";
+
+  return (
+    <>
+      <Section title="Momentum">
+        <MatchMomentum externalId={externalId} live={live} colors={colors} />
+      </Section>
+      <Section title="Stats">
+        <MatchStats externalId={externalId} live={live} colors={colors} />
+      </Section>
+      <Section title="Players">
+        <MatchPlayers externalId={externalId} live={live} colors={colors} />
+      </Section>
+      <Section title="Head-to-head">
+        <MatchH2H externalId={externalId} live={live} colors={colors} />
+      </Section>
+      {match.status !== "finished" && (
+        <Section title="Discussion">
+          <MatchChat matchId={externalId} locked={false} initialThreadId={threadParam} />
+        </Section>
+      )}
+    </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section style={{ marginTop: 32 }}>
+      <h2 style={{ margin: "0 0 14px" }}>{title}</h2>
+      {children}
+    </section>
+  );
 }
