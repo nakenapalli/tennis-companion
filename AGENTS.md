@@ -36,6 +36,13 @@ $env:JAVA_HOME = "C:\Users\naken\tools\jdk-21.0.11+10"   # this machine's JDK 21
 ```
 - Postgres + Redis run in Docker (containers `tc-postgres` / `tc-redis`, or `docker compose up -d postgres redis`); DB/user/pass all `tennis`.
 - One-time Sackmann historical load (idempotent): `.\gradlew.bat bootRun --args='--app.historical-load.enabled=true'`.
+  - **After a fresh load, dedupe players:** the Sackmann CSVs list some players under multiple ids (~226 same
+    name+tour+birth-date duplicates → duplicate review candidates / split history). The load re-introduces
+    them every time, so run the one-time cleanup afterward (idempotent — a no-op on an already-clean DB):
+    `docker exec -i tc-postgres psql -U tennis -d tennis < scripts/dedupe-players.sql`. It's not a Flyway
+    migration nor a loader guard by choice (the source is no longer public); re-run it manually after each
+    reload. (A read-time net in `AdminController.candidates` also collapses same name+birth-year dupes in the
+    review UI for any residue.)
 - **Frontend:** `cd frontend; npm install; npm run dev` (:3000). `npm run build` to type-check.
 - **API testing:** import `postman/tennis-companion.postman_collection.json` (set `baseUrl`; log in as admin for `/api/admin/**`).
 
