@@ -18,10 +18,14 @@ function extractSources(markdown: string): { body: string; sources: Array<{ text
   const sources: Array<{ text: string; url: string }> = [];
   const seen = new Set<string>();
   for (const m of markdown.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    const text = m[1].trim();
     const url = m[2].trim();
-    if (!seen.has(url)) {
-      seen.add(url);
-      sources.push({ text: m[1].trim(), url });
+    // Dedupe by publication name (the displayed text), so the same source isn't shown twice even when
+    // it's cited via two different article URLs.
+    const key = text.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      sources.push({ text, url });
     }
   }
   const body = markdown
@@ -101,12 +105,12 @@ function Top5({ title, tour, rows }: { title: string; tour: "ATP" | "WTA"; rows?
               <tr key={r.rank}>
                 <td className="rank-num">{r.rank}</td>
                 <td>
+                  <Flag ioc={r.country} />{" "}
                   {r.playerId ? (
                     <Link href={`/players/${r.playerId}`} className="player-link">{r.name}</Link>
                   ) : (
                     r.name
-                  )}{" "}
-                  <Flag ioc={r.country} />
+                  )}
                 </td>
                 <td>{r.points}</td>
               </tr>

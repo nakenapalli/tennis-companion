@@ -11,6 +11,7 @@ export function MatchHeader({ m }: { m: MatchDetail }) {
   const live = m.status === "live";
   const serve = live ? m.serve : undefined;
   const round = roundSuffix(m.round);
+  const roundLabel = m.qualifying ? (round ? `Qualifying - ${round}` : "Qualifying") : round;
   const winners = setWinners(m.score, live);
 
   return (
@@ -20,8 +21,7 @@ export function MatchHeader({ m }: { m: MatchDetail }) {
         <span className="match-meta">
           {m.tournamentName && <span className="tag">{m.tournamentName}</span>}
           <TierBadge tier={m.tier} tour={m.tour} detailed />
-          {m.qualifying && <span className="tag tag-qual">Qualifying</span>}
-          {round && <span className="tag">{round}</span>}
+          {roundLabel && <span className="tag">{roundLabel}</span>}
         </span>
       </div>
       <HeaderPlayerLine side={m.player1} score={m.score?.home} live={live} serving={serve === "home"} wonSets={winners.map((w) => w === "home")} />

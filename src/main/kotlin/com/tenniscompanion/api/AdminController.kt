@@ -86,6 +86,11 @@ class AdminController(
      * surname-blocked candidate set the live cascade and Tier 3 use (from the row's stored tour + name),
      * so a reviewer sees exactly what the matcher considered. Empty if the row is unknown, has no tour,
      * or its surname isn't in the historical set.
+     *
+     * Display-only dedupe: collapses copies that share name + birth year (the same person under multiple
+     * Sackmann ids — most are cleaned up in the players table, this catches any residue). Only collapses
+     * when birth year is present and equal, so genuine namesakes (different/absent birth years) stay
+     * distinct. The matcher's own candidate set (CandidateFinder) is left untouched.
      */
     @GetMapping("/unmapped-entities/candidates")
     fun candidates(
@@ -96,6 +101,7 @@ class AdminController(
         val tour = row.tour ?: return emptyList()
         val tokens = NameNormalizer.tokens(row.externalName ?: "")
         if (tokens.isEmpty()) return emptyList()
+        val seen = HashSet<String>()
         return candidateFinder.bySurname(tour, tokens).map {
             ReviewCandidate(
                 playerId = it.playerId,
@@ -104,7 +110,7 @@ class AdminController(
                 country = it.countryCode,
                 birthYear = it.birthYear,
             )
-        }
+        }.filter { c -> c.birthYear == null || seen.add("${c.name.lowercase()}|${c.birthYear}") }
     }
 
     /**
