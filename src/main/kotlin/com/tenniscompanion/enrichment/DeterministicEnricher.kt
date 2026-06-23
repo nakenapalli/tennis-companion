@@ -1,18 +1,19 @@
 package com.tenniscompanion.enrichment
 
-import com.tenniscompanion.integration.TournamentSurfaceRegistry
+import com.tenniscompanion.integration.SurfaceResolver
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
 /**
- * Resolves enrichment tasks via deterministic lookups (no network, no LLM). Currently handles
- * tournament surface via [TournamentSurfaceRegistry]. Returns true when the task is fully resolved.
+ * Resolves enrichment tasks via deterministic lookups (no network call per task, no LLM). Currently
+ * handles tournament surface via [SurfaceResolver] (curated registry → cached upstream catalog).
+ * Returns true when the task is fully resolved.
  */
 @Component
 class DeterministicEnricher(
     private val jdbc: JdbcTemplate,
-    private val surfaceRegistry: TournamentSurfaceRegistry,
+    private val surfaceResolver: SurfaceResolver,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -22,13 +23,13 @@ class DeterministicEnricher(
     }
 
     private fun enrichTournamentSurface(tournamentId: Long): Boolean {
-        val name = jdbc.query(
-            "SELECT name FROM tournaments WHERE id = ?",
-            { rs, _ -> rs.getString("name") },
+        val (name, externalId) = jdbc.query(
+            "SELECT name, external_id FROM tournaments WHERE id = ?",
+            { rs, _ -> rs.getString("name") to rs.getString("external_id") },
             tournamentId,
         ).firstOrNull() ?: return false
 
-        val surface = surfaceRegistry.surfaceOf(name) ?: return false
+        val surface = surfaceResolver.resolve(name, externalId) ?: return false
 
         val rows = jdbc.update(
             "UPDATE tournaments SET surface = ? WHERE id = ? AND surface IS NULL",

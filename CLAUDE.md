@@ -64,6 +64,25 @@ DB is a **running history** rather than a transient live snapshot (this is the "
 job" work). Reconciliation maps the upstream player ids onto the canonical Sackmann player set; Redis stays
 a pure read cache over these tables.
 
+## Flyway migrations — never edit an applied migration
+
+Flyway validates each migration's checksum on startup (`validate-on-migrate` is on by default, not disabled
+in `application.yml`). **Once a `V*__*.sql` file has been applied to any DB, editing it is a hard error** —
+the recomputed checksum won't match `flyway_schema_history`, so the next `./gradlew bootRun`/`build` fails
+validation and the app won't boot. Worse, the live schema still reflects the *old* file, so even bypassing
+validation leaves runtime mismatches (e.g. an `ON CONFLICT` naming an index the old migration never created).
+
+**Always add a new `V{n+1}` migration to change the schema — never modify a committed one.** If an applied
+migration was edited (e.g. pulled from a branch where it changed in place), the dev fix is to recreate the
+volume from scratch, since the historical data is reloadable:
+
+```bash
+docker compose down && docker volume rm tennis-companion_tc-pgdata
+docker compose up -d postgres redis
+./gradlew bootRun --args='--app.historical-load.enabled=true'   # runs migrations clean + loads Sackmann
+docker exec -i tc-postgres psql -U tennis -d tennis < scripts/dedupe-players.sql
+```
+
 ## Frontend routes
 
 App Router pages under `frontend/app/`:

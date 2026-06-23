@@ -64,6 +64,7 @@ app:
     ranking-top-n: ${POLL_RANKING_TOP_N:100}
     live-interval: ${POLL_LIVE_INTERVAL:PT1M}
     recent-interval: ${POLL_RECENT_INTERVAL:PT15M} # today's completed matches (one get_fixtures call)
+    startup-sync: ${POLL_STARTUP_SYNC:true} # pull rankings + tournaments once on boot (not just the daily cron)
 
   # LLM (Anthropic) — the weekly digest + (Phase 6b) Tier-3 reconciliation. Key reuses the existing
   # ANTHROPIC_API_KEY when LLM_API_KEY isn't set. The job no-ops when the key is blank.

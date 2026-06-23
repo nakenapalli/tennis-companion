@@ -29,4 +29,9 @@ data class PollProperties(
     val enabled: Boolean = true,
     val rankingTopN: Int = 150,
     val liveInterval: String = "PT1M",
+    /**
+     * Pull rankings + tournaments once on startup (in addition to the daily @Scheduled crons), so a
+     * freshly-booted instance serves current data without waiting for the next cron. Requires [enabled].
+     */
+    val startupSync: Boolean = true,
 )

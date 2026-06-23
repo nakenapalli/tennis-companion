@@ -53,6 +53,13 @@ class ApiTennisAdapter(
             .filter { t -> t.endDate?.let { !it.isBefore(today.minusDays(1)) } ?: true }
     }
 
+    override fun fetchTournamentCatalog(): List<NormalizedTournamentCatalogEntry> {
+        val resp = client.get().uri { b ->
+            b.queryParam("method", "get_tournaments").queryParam("APIkey", props.key).build()
+        }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<TournamentCatalogDto>>>() {})
+        return resultOf("get_tournaments", resp).orEmpty().mapNotNull(::toCatalogEntry)
+    }
+
     /**
      * Recently completed singles, most-recent first. Spans yesterday+today (UTC) so the list isn't
      * empty around the UTC-midnight boundary. Capped — a "recently completed" glance, not an archive —
@@ -376,6 +383,29 @@ class ApiTennisAdapter(
             startDate = dates.minOrNull(),
             endDate = dates.maxOrNull(),
         )
+    }
+
+    internal fun toCatalogEntry(d: TournamentCatalogDto): NormalizedTournamentCatalogEntry? {
+        val key = d.tournamentKey?.ifBlank { null } ?: return null
+        return NormalizedTournamentCatalogEntry(
+            externalId = key,
+            name = d.tournamentName?.trim().orEmpty(),
+            surface = canonicalSurface(d.surface),
+        )
+    }
+
+    /**
+     * Maps the upstream's messy `tournament_sourface` vocabulary onto our canonical {Hard, Clay, Grass}.
+     * Handles case ("hard"), the "(Indoor)" suffix (our model has no indoor flag, so it collapses to the
+     * base surface), and rejects blanks / non-surface labels (team-competition stages like "- Promotion")
+     * by returning null.
+     */
+    internal fun canonicalSurface(raw: String?): String? = when {
+        raw == null -> null
+        raw.trim().startsWith("Grass", ignoreCase = true) -> "Grass"
+        raw.trim().startsWith("Clay", ignoreCase = true) -> "Clay"
+        raw.trim().startsWith("Hard", ignoreCase = true) -> "Hard"
+        else -> null
     }
 
     internal fun isSingles(f: FixtureDto): Boolean = f.eventTypeType?.contains("Singles", ignoreCase = true) ?: false

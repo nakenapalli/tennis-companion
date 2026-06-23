@@ -15,6 +15,13 @@ interface TennisApiAdapter {
 
     fun fetchCurrentTournaments(): List<NormalizedTournament>
 
+    /**
+     * The full upstream tournament catalog (a near-static reference list), each entry keyed by its
+     * `tournament_key` (== a tournament's `external_id`) and carrying a canonicalized surface. Used to
+     * resolve surfaces deterministically by key. Default: none.
+     */
+    fun fetchTournamentCatalog(): List<NormalizedTournamentCatalogEntry> = emptyList()
+
     /** Today's completed matches, for the "completed today" view when nothing is live. Default: none. */
     fun fetchRecentMatches(): List<NormalizedMatch> = emptyList()
 

@@ -88,6 +88,18 @@ data class StatisticDto(
     @JsonProperty("stat_total") val statTotal: Int? = null,
 )
 
+/**
+ * One entry in the get_tournaments catalog (a static reference list of every tournament). Note the
+ * vendor's misspelled field name `tournament_sourface` — the only place the feed exposes a surface.
+ * `tournament_key` arrives as a JSON number; Jackson coerces it to String (same as on [FixtureDto]).
+ */
+data class TournamentCatalogDto(
+    @JsonProperty("tournament_key") val tournamentKey: String? = null,
+    @JsonProperty("tournament_name") val tournamentName: String? = null,
+    @JsonProperty("event_type_type") val eventTypeType: String? = null,
+    @JsonProperty("tournament_sourface") val surface: String? = null,
+)
+
 /** A player profile (get_players). `country` is a full English name; `birthday` is "dd.mm.yyyy". */
 data class PlayerDto(
     @JsonProperty("player_key") val key: String? = null,

@@ -128,3 +128,15 @@ data class NormalizedTournament(
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
 )
+
+/**
+ * One entry from the upstream tournament catalog (api-tennis `get_tournaments`). A near-static reference
+ * list keyed by `externalId` (== a tournament's `tournament_key`). Unlike the live fixtures feed it
+ * carries a `surface`, already canonicalized to one of Hard/Clay/Grass (null when the upstream value is
+ * blank or a non-surface label) — the basis for deterministic surface enrichment by key.
+ */
+data class NormalizedTournamentCatalogEntry(
+    val externalId: String,
+    val name: String,
+    val surface: String? = null,
+)

@@ -216,6 +216,38 @@ class ApiTennisAdapterTest {
     }
 
     @Test
+    fun `canonicalSurface folds the upstream vocabulary and rejects non-surface labels`() {
+        assertEquals("Hard", adapter.canonicalSurface("Hard"))
+        assertEquals("Clay", adapter.canonicalSurface("Clay"))
+        assertEquals("Grass", adapter.canonicalSurface("Grass"))
+        // "(Indoor)" suffix collapses to the base surface (our model has no indoor flag)
+        assertEquals("Hard", adapter.canonicalSurface("Hard (Indoor)"))
+        assertEquals("Clay", adapter.canonicalSurface("Clay (Indoor)"))
+        // case-insensitive
+        assertEquals("Hard", adapter.canonicalSurface("hard"))
+        // blanks and team-competition stage labels are not surfaces
+        assertNull(adapter.canonicalSurface(""))
+        assertNull(adapter.canonicalSurface("- Promotion"))
+        assertNull(adapter.canonicalSurface("- Play Offs"))
+        assertNull(adapter.canonicalSurface(null))
+    }
+
+    @Test
+    fun `toCatalogEntry keeps the key and canonicalizes surface, drops keyless rows`() {
+        val e = adapter.toCatalogEntry(
+            TournamentCatalogDto(tournamentKey = "2131", tournamentName = "Acapulco", eventTypeType = "Atp Singles", surface = "Hard (Indoor)"),
+        )!!
+        assertEquals("2131", e.externalId)
+        assertEquals("Acapulco", e.name)
+        assertEquals("Hard", e.surface)
+        // a non-surface upstream value yields a null surface (still a valid entry, just unknown surface)
+        assertNull(adapter.toCatalogEntry(TournamentCatalogDto(tournamentKey = "9", surface = ""))!!.surface)
+        // no key -> not a usable catalog entry
+        assertNull(adapter.toCatalogEntry(TournamentCatalogDto(tournamentKey = null, surface = "Clay")))
+        assertNull(adapter.toCatalogEntry(TournamentCatalogDto(tournamentKey = "", surface = "Clay")))
+    }
+
+    @Test
     fun `maps a standing to a ranking with IOC country`() {
         val r = adapter.toRanking(
             StandingDto(place = "1", player = "Iga Swiatek", playerKey = "1910", league = "WTA", country = "Poland", points = "8501"),
