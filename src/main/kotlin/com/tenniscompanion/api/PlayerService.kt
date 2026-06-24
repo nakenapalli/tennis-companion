@@ -10,6 +10,12 @@ import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.util.UUID
 
+/**
+ * Player-detail reads, all backed by the reconciled Sackmann data (not the live feed): the profile,
+ * recent results, and head-to-head. Everything is keyed by the canonical `players.id` UUID — callers
+ * resolve a live match's upstream player to that UUID via reconciliation before landing here.
+ * Also reused by the match-view's Players/H2H tabs and the digest fact sheet for authoritative names/ranks.
+ */
 @Service
 class PlayerService(
     private val players: PlayerRepository,
@@ -17,6 +23,7 @@ class PlayerService(
     private val jdbc: JdbcTemplate,
 ) {
 
+    /** Bio + current rank, or null if the UUID isn't a known player. */
     fun profile(playerId: UUID): PlayerProfileDto? {
         val p = players.findById(playerId).orElse(null) ?: return null
         val (rank, rankDate) = currentRank(p.id, p.tour)
@@ -34,11 +41,13 @@ class PlayerService(
         )
     }
 
+    /** Most-recent results first, projected onto this player's W/L perspective. Limit is clamped 1..100. */
     fun recentMatches(playerId: UUID, limit: Int): List<MatchDto> {
         val page = PageRequest.of(0, limit.coerceIn(1, 100), Sort.by(Sort.Direction.DESC, "tourneyDate"))
         return matches.findByWinnerIdOrLoserId(playerId, playerId, page).map { it.toDto(playerId) }
     }
 
+    /** Full head-to-head record + meeting list between two players (used when both are reconciled). */
     fun headToHead(playerId: UUID, opponentId: UUID): H2hDto {
         val all = matches.findHeadToHead(playerId, opponentId)
         val playerWins = all.count { it.winnerId == playerId }

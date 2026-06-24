@@ -6,10 +6,12 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
+/** Current ATP/WTA ranking snapshot, served from the Redis/Postgres cache (never upstream). */
 @RestController
 @RequestMapping("/api/rankings")
 class RankingsController(private val store: LiveDataStore) {
 
+    /** `tour` is ATP|WTA (case-insensitive, default ATP); `limit` is clamped to 1..500. */
     @GetMapping
     fun rankings(
         @RequestParam(defaultValue = "ATP") tour: String,

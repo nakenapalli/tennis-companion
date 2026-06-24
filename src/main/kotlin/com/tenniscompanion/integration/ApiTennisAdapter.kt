@@ -137,7 +137,7 @@ class ApiTennisAdapter(
         }.retrieve().body(object : ParameterizedTypeReference<ApiTennisResponse<List<FixtureDto>>>() {})
         val f = resultOf("get_fixtures", resp).orEmpty().firstOrNull() ?: return null
 
-        val games = f.pointByPoint.orEmpty().mapNotNull(::toGame)
+        val games = assembleGames(f.pointByPoint.orEmpty())
         val stats = f.statistics.orEmpty().mapNotNull { s -> toStat(s, f.firstPlayerKey) }
         return NormalizedMatchDetail(games, stats, f.firstPlayerKey, f.secondPlayerKey)
     }
@@ -232,6 +232,12 @@ class ApiTennisAdapter(
     }
 
     internal fun toGame(g: PbpGameDto): NormalizedGame? {
+        // The feed represents a tiebreak TWICE: once as the deciding game of its set (e.g. "Set 2"
+        // game 13 = "7-6") AND again as a separate "Set N TieBreak" point list. The latter must be
+        // dropped — its label has no set number, so the parse below falls back to set 1, and the
+        // tiebreak's points get miscounted as a whole extra set (a phantom "7-5" in the scoreboard).
+        // The set's own final game already records the outcome, so the detail list is redundant here.
+        if (isTiebreakDetail(g.setNumber)) return null
         val server = sideOfLabel(g.playerServed) ?: return null
         val winner = sideOfLabel(g.serveWinner) ?: return null
         val setNo = g.setNumber?.substringAfterLast(' ')?.toIntOrNull() ?: 1
@@ -251,6 +257,55 @@ class ApiTennisAdapter(
         }
         return NormalizedGame(setNo, gameNo, server, winner, points)
     }
+
+    /** A "Set N TieBreak" point-detail row (vs a real "Set N" game). Space/hyphen-insensitive. */
+    internal fun isTiebreakDetail(setNumber: String?): Boolean =
+        setNumber?.replace(" ", "")?.replace("-", "")?.contains("tiebreak", ignoreCase = true) == true
+
+    /** Set number from a label like "Set 2" or "Set 2 TieBreak" (the suffix stripped first). */
+    internal fun setNoOf(setNumber: String?): Int? =
+        setNumber?.replace(Regex("(?i)tie[ -]?break"), "")?.trim()?.substringAfterLast(' ')?.toIntOrNull()
+
+    /**
+     * Builds the per-game point flow, folding each tiebreak's separate "Set N TieBreak" rows back into
+     * that set's deciding game. The feed lists a tiebreak TWICE: once as the set's deciding game (e.g.
+     * "Set 2" game 13 = "6-7") and again as one "Set N TieBreak" row PER POINT (winner in serve_winner,
+     * running score in score). Those rows are often out of order and interleaved with the deciding game,
+     * so we group + sort them by point number and attach them as the deciding game's points. Without
+     * this the line jumps 6-6 → 6-7 in a single step (every tiebreak point skipped).
+     */
+    internal fun assembleGames(pbp: List<PbpGameDto>): List<NormalizedGame> {
+        val regular = pbp.filterNot { isTiebreakDetail(it.setNumber) }.mapNotNull(::toGame)
+        val tbPointsBySet = pbp.filter { isTiebreakDetail(it.setNumber) }
+            .groupBy { setNoOf(it.setNumber) }
+            .mapNotNull { (set, rows) -> set?.let { it to tiebreakPoints(rows) } }
+            .toMap()
+        if (tbPointsBySet.isEmpty()) return regular
+        // a set's tiebreak is its highest-numbered game (game 13, played at 6-6); attach the points there
+        val tiebreakGameIdx = regular.withIndex()
+            .filter { tbPointsBySet.containsKey(it.value.setNumber) }
+            .groupBy { it.value.setNumber }
+            .mapValues { (_, rows) -> rows.maxBy { it.value.gameInSet }.index }
+            .values.toSet()
+        return regular.mapIndexed { i, g ->
+            val pts = tbPointsBySet[g.setNumber]
+            if (i in tiebreakGameIdx && !pts.isNullOrEmpty()) g.copy(points = pts, isTiebreak = true) else g
+        }
+    }
+
+    /** Each "Set N TieBreak" row is one tiebreak point — ordered by point number, winner + server from the feed. */
+    private fun tiebreakPoints(rows: List<PbpGameDto>): List<NormalizedGamePoint> =
+        rows.sortedBy { it.numberGame?.toIntOrNull() ?: 0 }.mapNotNull { r ->
+            val winner = sideOfLabel(r.serveWinner) ?: return@mapNotNull null
+            NormalizedGamePoint(
+                winnerSide = winner,
+                label = r.score?.replace(" ", "") ?: "", // running tiebreak score, e.g. "5-3"
+                breakPoint = false,
+                setPoint = false,
+                matchPoint = false,
+                server = sideOfLabel(r.playerServed), // serve alternates in a tiebreak → enables mini-break detection
+            )
+        }
 
     /** Map a "30 - 15" in-game score to numeric ranks (0,15,30,40→0..3; A/AD→4). Null if unparseable. */
     private fun parsePointScore(score: String?): Pair<Int, Int>? {

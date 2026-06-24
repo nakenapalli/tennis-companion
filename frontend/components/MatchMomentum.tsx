@@ -87,6 +87,7 @@ export function MatchMomentum({ externalId, live, colors }: { externalId: string
 
       const setsArr = p?.sets ? p.sets.split(", ").map((s) => s.split("-")) : [];
       const cur = (p?.games || "0-0").split("-");
+      const pts = (p?.points || "").split("-"); // in-game point score ("" on a game-ending sample)
       const brk = breaks.find((b) => b.x === x);
       const row = (name: string, i: number) => {
         const pill =
@@ -94,11 +95,18 @@ export function MatchMomentum({ externalId, live, colors }: { externalId: string
             ? `<span style="margin-left:6px;padding:1px 6px;border-radius:6px;background:${i === 0 ? colors.c1 : colors.c2};` +
               `color:#0e1116;font-size:10px;font-weight:600;vertical-align:middle">Break</span>`
             : "";
+        // serve indicator: a dot in the server's colour (blank spacer for the other player keeps names aligned)
+        const serve =
+          p?.server === i + 1
+            ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${i === 0 ? colors.c1 : colors.c2};margin-right:6px;vertical-align:middle"></span>`
+            : `<span style="display:inline-block;width:7px;margin-right:6px"></span>`;
         const setCells = setsArr
           .map((s) => `<td style="padding:0 5px;text-align:center;color:var(--muted)">${s[i] ?? ""}</td>`)
           .join("");
         const curCell = `<td style="padding:0 5px;text-align:center;font-weight:600;color:var(--text)">${cur[i] ?? ""}</td>`;
-        return `<tr><td style="padding:0 10px 0 0;white-space:nowrap">${name}${pill}</td>${setCells}${curCell}</tr>`;
+        // current-game point score, divided from the games columns; blank on a game-ending sample
+        const ptsCell = `<td style="padding:0 4px 0 8px;text-align:center;font-weight:600;color:${i === 0 ? colors.c1 : colors.c2};border-left:1px solid rgba(255,255,255,0.12)">${pts[i] ?? ""}</td>`;
+        return `<tr><td style="padding:0 10px 0 0;white-space:nowrap">${serve}${name}${pill}</td>${setCells}${curCell}${ptsCell}</tr>`;
       };
       const board =
         `<table style="border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px;line-height:1.55">` +

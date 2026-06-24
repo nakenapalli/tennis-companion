@@ -96,15 +96,21 @@ data class NormalizedGame(
     val serverSide: Int,  // 1 | 2
     val winnerSide: Int,  // 1 | 2
     val points: List<NormalizedGamePoint>,
+    val isTiebreak: Boolean = false, // the set's tiebreak (points are the tiebreak's points, serve alternates)
 )
 
-/** One point. `winnerSide` is who won it (null if undetermined); `label` is the in-game score "30-15" (side1-side2). */
+/**
+ * One point. `winnerSide` is who won it (null if undetermined); `label` is the in-game score "30-15"
+ * (side1-side2). `server` is who served THIS point — only tracked for tiebreaks (serve alternates there),
+ * null otherwise (a regular game's server is the game's [NormalizedGame.serverSide]).
+ */
 data class NormalizedGamePoint(
     val winnerSide: Int?,
     val label: String,
     val breakPoint: Boolean,
     val setPoint: Boolean,
     val matchPoint: Boolean,
+    val server: Int? = null,
 )
 
 /** One statistic row resolved to a side. `value` is a display string ("60%"); won/total give the ratio. */

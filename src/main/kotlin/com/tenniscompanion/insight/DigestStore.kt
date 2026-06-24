@@ -18,12 +18,19 @@ data class StoredInsight(
     val publishedAt: Instant?,
 )
 
+/**
+ * Persistence for the AI digest (`generated_insights`). The lifecycle is DRAFT → PUBLISHED: the job
+ * always writes a DRAFT, and only a clean fact-check (or an admin) flips it to PUBLISHED — the public
+ * read endpoints + home page show **published** rows only. `source_data` keeps the grounding fact sheet
+ * for traceability (scraped article text is never stored). Plain JDBC.
+ */
 @Repository
 class DigestStore(
     private val jdbc: JdbcTemplate,
     private val mapper: ObjectMapper,
 ) {
 
+    /** Insert a freshly generated digest as DRAFT; returns the new row id. */
     fun saveDraft(type: String, title: String, bodyMarkdown: String, sourceData: Map<String, Any?>, model: String): Long =
         jdbc.queryForObject(
             """

@@ -2,6 +2,10 @@ package com.tenniscompanion.chat
 
 import java.time.Instant
 
+// Two layers: the API DTOs the controller serves (ISO `Instant`, author shown by username), and the
+// internal Redis-stored shapes (epoch millis, author kept by id+name). The chat is cache-only — none of
+// this is ever written to Postgres. `locked` = true once the match is finished (no new threads/messages).
+
 // --- API DTOs ---
 
 data class ThreadSummaryDto(

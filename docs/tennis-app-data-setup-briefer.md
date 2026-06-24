@@ -17,8 +17,8 @@ Real-time, sub-second, point-by-point feeds (the kind sportsbooks use) are expen
 **Key facts for API Tennis:**
 - **Base + auth:** `https://api.api-tennis.com/tennis/?method=<m>&APIkey=<key>` — auth is an **`APIkey` query parameter**, not a header.
 - **Quota:** Starter ≈ **8,000 requests/day** (Premium 80k, Business 200k); a **14-day trial** is available. That's ~160× the old free-tier cap, which is why scheduled polling is on by default (a 60s live poll ≈ 1,440/day).
-- **Methods used:** `get_livescore` (live), `get_standings&event_type=ATP|WTA` (rankings), `get_fixtures&date_start&date_stop` (matches → current tournaments + recently-completed). H2H stays on Sackmann.
-- **Response gotchas the adapter handles:** snake_case fields; ids come as JSON **numbers** (Jackson coerces to our `String?`); full country **names** ("Serbia") → mapped to IOC codes; **no surface** in the live/fixtures feed; tiebreak sets encoded as decimals ("7.7" = 7 games / 7 TB pts); round is mixed ("1/8-finals" *and* "Quarter-finals"); a 0-result livescore returns `{"success":1}` with no `result` key.
+- **Methods used:** `get_livescore` (live), `get_standings&event_type=ATP|WTA` (rankings), `get_fixtures&date_start&date_stop` (matches → current tournaments + recently-completed). For the **match-detail view**: `get_fixtures&match_key=…` (returns the point-by-point flow *and* the undocumented `statistics` array — powers momentum + stats), `get_H2H` (head-to-head when a player isn't reconciled), `get_players&player_key=…` (career splits / logo). For **surface enrichment**: `get_tournaments` (a static reference catalog — the only place the feed exposes a surface, misspelled `tournament_sourface`, keyed by `tournament_key` = our `external_id`). For **admin reconciliation review**: `get_fixtures&player_key=…` (a candidate's recent results). H2H still prefers Sackmann history when both players are reconciled.
+- **Response gotchas the adapter handles:** snake_case fields; ids come as JSON **numbers** (Jackson coerces to our `String?`); full country **names** ("Serbia") → mapped to IOC codes; **no surface** in the live/fixtures feed (only the `get_tournaments` catalog has it, and it's imperfect — a curated registry overrides it); tiebreak sets encoded as decimals ("7.7" = 7 games / 7 TB pts), and a tiebreak appears **twice** in the point-by-point (as the set's deciding game *and* a separate `"Set N TieBreak"` per-point list); round is mixed ("1/8-finals" *and* "Quarter-finals"); a 0-result livescore returns `{"success":1}` with no `result` key (the adapter treats a missing/error envelope as a failure, not an empty result, so a glitch never wipes last-good rows).
 - WebSocket (`wss://wss.api-tennis.com/live`) exists but is **Business-tier** and unnecessary for minute-level freshness.
 
 ### Realistic options (historical context — verify current pricing at signup)
@@ -55,20 +55,22 @@ Other repos in the same account (`tennis_pointbypoint`, `tennis_MatchChartingPro
 
 ### File layout you'll load
 - Player file: `player_id, first_name, last_name, hand, birth_date, country_code, height` → maps to `players`. `country_code` is **IOC** 3-letter (GER, SUI, …) — relevant for reconciliation country matching.
-- Rankings files (per period): `ranking_date, ranking, player_id, ranking_points` → maps to `rankings_history`.
-- Match files per season (e.g. `atp_matches_2014.csv`): winner/loser, surface, tourney info, round, score → maps to `matches`.
+- Rankings files (per period): `ranking_date, ranking, player_id, ranking_points` → maps to `rankings` (`source='sackmann'`).
+- Match files per season (e.g. `atp_matches_2014.csv`): winner/loser, surface, tourney info, round, score → maps to `matches` (`source='sackmann'`).
 
-> ⚠️ **As-built gotcha — ATP and WTA `player_id`s collide** (~14.5k overlapping raw ids). The loader namespaces the canonical `player_id`: **ATP = raw id, WTA = raw id + 1,000,000,000** (so `player_id >= 1e9` ⇒ WTA), keeping the raw id in `source_player_id`. The offset is applied to `players.player_id`, `rankings_history.player_id`, and `matches.winner_id`/`loser_id` alike.
+> ⚠️ **As-built gotchas — IDs.** (1) **ATP and WTA raw `player_id`s collide** (~14.5k overlapping). The loader namespaces an integer key as **ATP = raw, WTA = raw + 1,000,000,000**, keeping the raw value in `source_player_id`. (2) **The canonical PK is now a `UUID` (`players.id`)** after the V10 migration — that namespaced integer lives on as `players.sackmann_id` (still carrying the WTA offset, used for traceability + the Tier-3 LLM prompts). Everything reconciled (`matches`, `rankings`, `entity_map`, `user_favorites`) references the **UUID**. (3) Live API-Tennis rows accumulate into those *same* `matches`/`rankings` tables (`source='api-tennis'`) — the Sackmann load lays the base, the pollers upsert on top (design doc §12).
 
-For the MVP, load the **most recent ~5 seasons** plus the player and rankings files (the as-built loader did 2021–2026); the schema supports the full archive later (design doc §6.3, §12). It's idempotent (`ON CONFLICT DO NOTHING`).
+For the MVP, load the **most recent ~5 seasons** plus the player and rankings files (the as-built loader did 2021–2026); the schema supports the full archive later (design doc §6.3, §12). It's idempotent (`ON CONFLICT DO NOTHING`). **After a fresh load, run the dedupe once:** `docker exec -i tc-postgres psql -U tennis -d tennis < scripts/dedupe-players.sql` — the CSVs list ~226 players under multiple ids and the load re-introduces them every time (it's a no-op on an already-clean DB).
 
 ### How to get them
-Clone the two repos (or download the CSVs you need):
+> ⚠️ **The `JeffSackmann/tennis_atp` and `tennis_wta` repos are no longer publicly accessible**, so the `git clone` commands below will fail. Seed the load from a **local copy** of the CSVs placed in `data/tennis_atp` and `data/tennis_wta` (override the paths with `SACKMANN_ATP_DIR` / `SACKMANN_WTA_DIR`; defaults are in `application.yml`).
+
+The original repos (for reference / if you already have a copy):
 ```
-git clone https://github.com/JeffSackmann/tennis_atp.git
-git clone https://github.com/JeffSackmann/tennis_wta.git
+git clone https://github.com/JeffSackmann/tennis_atp.git    # no longer public
+git clone https://github.com/JeffSackmann/tennis_wta.git    # no longer public
 ```
-Point the historical loader (design doc §6.3) at the local CSV paths. Keep the loader **idempotent** so re-running it (e.g. after pulling newer data) doesn't duplicate rows. Note: individual files fetched directly from `raw.githubusercontent.com` may be gzipped; cloning the repo avoids that.
+Point the historical loader (design doc §6.3) at the local CSV paths via the env vars above. Keep the loader **idempotent** so re-running it (e.g. after pulling newer data) doesn't duplicate rows.
 
 ### ⚠️ License — the one that shapes commercialization
 These datasets are licensed **Creative Commons Attribution-NonCommercial-ShareAlike 4.0**:
@@ -81,7 +83,7 @@ These datasets are licensed **Creative Commons Attribution-NonCommercial-ShareAl
 
 **Sequencing note:** although this briefer presents the live API first, do the **historical setup first**. The Sackmann data needs no account and no ToS review, so it unblocks real work immediately — you get real rows to build and test the player endpoints against (Phase 1) right away. The live feed depends on signup and reading the provider's terms, so front-loading the dependency-free part keeps you moving while that's sorted.
 
-1. Clone the two Sackmann repos locally and confirm the historical loader can read the CSVs; load the recent seasons + player/rankings files. Proceed into Phase 1 (player endpoints) against real data.
+1. Place a local copy of the Sackmann CSVs in `data/tennis_atp` / `data/tennis_wta` (the repos are no longer public — see §2) and confirm the historical loader can read them; load the recent seasons + player/rankings files, then run `scripts/dedupe-players.sql`. Proceed into Phase 1 (player endpoints) against real data.
 2. Sign up at **api-tennis.com** (14-day trial), capture sample responses from `get_livescore`/`get_standings`/`get_fixtures`, and wire `TENNIS_API_KEY` + `TENNIS_API_BASE_URL` into env vars.
 3. Surface the provider's ToS so the developer can read it before the adapter is built.
 4. Proceed into Phase 2 (adapter + pollers + reconciliation Tiers 0–2).

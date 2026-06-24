@@ -2,12 +2,18 @@
   "info": {
     "_postman_id": "b1f2c3d4-0001-4a2b-8c3d-tenniscompanion",
     "name": "Tennis Companion",
-    "description": "Phases 0-7. Set the `baseUrl` collection variable to your running port. Player ids: ATP = raw Sackmann id; WTA = raw id + 1,000,000,000.\n\nThe scores/rankings/tournaments READ endpoints serve from cache (no upstream calls). The /api/admin/poll/* endpoints hit the upstream feed (API Tennis, ~8,000 req/day on Starter) — scheduled polling is on by default, so you usually don't need them. The weekly AI digest (Insights folder) calls Anthropic, blends in cited full-text news scraped from chosen sites (preview via 'Preview news feed' — no LLM call), fact-checks the result, and auto-publishes only if the fact-check passes (else it stays a DRAFT).",
+    "description": "Phases 0-7. Set the `baseUrl` collection variable to your running port.\n\nPlayer ids are now **UUIDs** (`players.id`) — DB-generated, so they differ per load and can't be hard-coded. Run the **Rankings** and **Live scores** requests first: their test scripts auto-capture a `{{playerId}}` / `{{opponentId}}` / `{{matchExternalId}}` / `{{tournamentId}}` into collection variables that the Players / Match detail / Chat / Tournament-detail requests then use. (The legacy namespaced Sackmann integer survives as `players.sackmann_id`, ATP = raw, WTA = raw + 1e9, but the API addresses players by UUID.)\n\nThe scores/rankings/tournaments/match-detail READ endpoints serve from cache (no upstream call on read). The `/api/admin/poll/*` endpoints hit the upstream feed (API Tennis, ~8k req/day on Starter) — scheduled polling is on by default, so you usually don't need them. Per-match **chat** reads are public SSE/REST; posting needs a login. The weekly AI **digest** calls Anthropic, blends in cited scraped news, fact-checks, and auto-publishes only if clean (else DRAFT).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "token", "value": "" },
+    { "key": "playerId", "value": "" },
+    { "key": "opponentId", "value": "" },
+    { "key": "matchExternalId", "value": "" },
+    { "key": "tournamentId", "value": "" },
+    { "key": "threadId", "value": "" },
+    { "key": "unmappedExternalId", "value": "" },
     { "key": "insightId", "value": "" }
   ],
   "auth": {
@@ -17,12 +23,12 @@
   "item": [
     {
       "name": "Auth (Phase 4)",
-      "description": "Register or log in — the token is saved to {{token}} and auto-attached to every request (collection-level bearer auth). To use /api/admin/**, log in as an admin (set ADMIN_EMAIL/ADMIN_PASSWORD in .env first).",
+      "description": "Register or log in — the token is saved to {{token}} and auto-attached to every request (collection-level bearer auth). Registration now requires a `username` (3-20 chars, letters/numbers/underscore) — it's the public handle shown on chat messages. To use /api/admin/**, log in as an admin (set ADMIN_EMAIL/ADMIN_PASSWORD in .env first).",
       "item": [
         {
           "name": "Register",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
-          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"fan@example.com\",\n  \"password\": \"password123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] } }
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 409 (already registered)', () => pm.expect([200,409]).to.include(pm.response.code));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"fan@example.com\",\n  \"username\": \"fan\",\n  \"password\": \"password123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] } }
         },
         {
           "name": "Login",
@@ -33,31 +39,6 @@
           "name": "Login as admin",
           "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().token);" ] } } ],
           "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@local\",\n  \"password\": \"adminpass123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } }
-        }
-      ]
-    },
-    {
-      "name": "Me — personalization (Phase 4, needs login)",
-      "item": [
-        {
-          "name": "Home config (GET)",
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
-        },
-        {
-          "name": "Home config (PUT)",
-          "request": { "method": "PUT", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"widgets\": [\"live-matches\", \"rankings-atp\", \"favorites\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
-        },
-        {
-          "name": "Favorites (GET)",
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
-        },
-        {
-          "name": "Add favorite (Alcaraz 207989)",
-          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"playerId\": 207989\n}" }, "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
-        },
-        {
-          "name": "Remove favorite (207989)",
-          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites/207989", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites", "207989"] } }
         }
       ]
     },
@@ -77,61 +58,28 @@
       ]
     },
     {
-      "name": "Players — profile",
-      "item": [
-        {
-          "name": "Sinner (ATP #1) — 206173",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('has lastName', () => pm.expect(pm.response.json()).to.have.property('lastName'));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/206173", "host": ["{{baseUrl}}"], "path": ["api", "players", "206173"] } }
-        },
-        {
-          "name": "Alcaraz (ATP #2) — 207989",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989"] } }
-        },
-        {
-          "name": "Sabalenka (WTA #1, namespaced) — 1000214544",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('tour is WTA', () => pm.expect(pm.response.json().tour).to.eql('WTA'));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/1000214544", "host": ["{{baseUrl}}"], "path": ["api", "players", "1000214544"] } }
-        }
-      ]
-    },
-    {
-      "name": "Players — matches & h2h",
-      "item": [
-        {
-          "name": "Alcaraz recent (limit=5)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('<= 5 rows', () => pm.expect(pm.response.json().length).to.be.at.most(5));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989/matches?limit=5", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989", "matches"], "query": [ { "key": "limit", "value": "5" } ] } }
-        },
-        {
-          "name": "Alcaraz vs Sinner (h2h)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const b = pm.response.json();", "pm.test('totals add up', () => pm.expect(b.playerWins + b.opponentWins).to.eql(b.matches.length));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/207989/h2h?opponentId=206173", "host": ["{{baseUrl}}"], "path": ["api", "players", "207989", "h2h"], "query": [ { "key": "opponentId", "value": "206173" } ] } }
-        }
-      ]
-    },
-    {
       "name": "Live scores (Phase 2)",
+      "description": "Served from cache (no upstream call). 'Live matches' / 'Recently completed' capture the first match's externalId into {{matchExternalId}} for the Match detail + Chat folders.",
       "item": [
         {
           "name": "Live matches (cached)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// empty until you POST /api/admin/poll/live at least once" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "const a = pm.response.json();", "if (a[0] && a[0].externalId) pm.collectionVariables.set('matchExternalId', a[0].externalId);", "// empty until a live poll has run (scheduled on by default, or POST /api/admin/poll/live)" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/live", "host": ["{{baseUrl}}"], "path": ["api", "scores", "live"] } }
         },
         {
           "name": "Recently completed matches",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// today's + yesterday's finished matches, most-recent first (no params)" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "const a = pm.response.json();", "// fall back to a finished match for the detail tabs if nothing is live", "if (!pm.collectionVariables.get('matchExternalId') && a[0] && a[0].externalId) pm.collectionVariables.set('matchExternalId', a[0].externalId);" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/scores/recent", "host": ["{{baseUrl}}"], "path": ["api", "scores", "recent"] } }
         }
       ]
     },
     {
       "name": "Rankings (Phase 2)",
+      "description": "Served from cache. 'ATP rankings' captures the first two reconciled rows' UUIDs into {{playerId}} and {{opponentId}} for the Players / Me folders.",
       "item": [
         {
           "name": "ATP rankings (limit=20)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// rows include playerId (canonical Sackmann id) once reconciled" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "const withId = pm.response.json().filter(r => r.playerId); // reconciled rows carry the canonical UUID", "if (withId[0]) pm.collectionVariables.set('playerId', withId[0].playerId);", "if (withId[1]) pm.collectionVariables.set('opponentId', withId[1].playerId);" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/rankings?tour=ATP&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "rankings"], "query": [ { "key": "tour", "value": "ATP" }, { "key": "limit", "value": "20" } ] } }
         },
         {
@@ -142,8 +90,151 @@
       ]
     },
     {
-      "name": "Admin — polling & reconciliation (needs admin login)",
-      "description": "The poll endpoints call the upstream feed (API Tennis). Scheduled polling is on by default, so these are mostly for on-demand refreshes. All /api/admin/** require an admin token — run 'Login as admin' first.",
+      "name": "Players — profile, matches & h2h",
+      "description": "Uses {{playerId}} / {{opponentId}} captured by the Rankings folder (run that first). Player ids are UUIDs.",
+      "item": [
+        {
+          "name": "Player profile ({{playerId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('has lastName', () => pm.expect(pm.response.json()).to.have.property('lastName'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/{{playerId}}", "host": ["{{baseUrl}}"], "path": ["api", "players", "{{playerId}}"] } }
+        },
+        {
+          "name": "Recent matches (limit=5)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('<= 5 rows', () => pm.expect(pm.response.json().length).to.be.at.most(5));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/{{playerId}}/matches?limit=5", "host": ["{{baseUrl}}"], "path": ["api", "players", "{{playerId}}", "matches"], "query": [ { "key": "limit", "value": "5" } ] } }
+        },
+        {
+          "name": "Head-to-head ({{playerId}} vs {{opponentId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const b = pm.response.json();", "pm.test('totals add up', () => pm.expect(b.playerWins + b.opponentWins).to.eql(b.matches.length));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/{{playerId}}/h2h?opponentId={{opponentId}}", "host": ["{{baseUrl}}"], "path": ["api", "players", "{{playerId}}", "h2h"], "query": [ { "key": "opponentId", "value": "{{opponentId}}" } ] } }
+        }
+      ]
+    },
+    {
+      "name": "Match detail — momentum/stats/h2h/players (Phase 7)",
+      "description": "The match-view tabs. All keyed by the api-tennis external_id ({{matchExternalId}}, captured by the Live scores folder). One cached upstream fetch backs them; the sub-tabs 404 when the feed carries no point/stat data (common on lower circuits), so [200,404] is the expected set.",
+      "item": [
+        {
+          "name": "Match detail snapshot",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}"] } }
+        },
+        {
+          "name": "Momentum (bespoke line)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404 (no point-by-point)', () => pm.expect([200,404]).to.include(pm.response.code));", "if (pm.response.code === 200) pm.test('has a series', () => pm.expect(pm.response.json()).to.have.property('series'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/momentum", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "momentum"] } }
+        },
+        {
+          "name": "Stats (per-period comparison)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404 (no stats on this tour)', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/stats", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "stats"] } }
+        },
+        {
+          "name": "Head-to-head tab",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/h2h", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "h2h"] } }
+        },
+        {
+          "name": "Players tab (bios + career splits)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/players", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "players"] } }
+        }
+      ]
+    },
+    {
+      "name": "Chat — per match (cache-only, SSE)",
+      "description": "Redis-backed chat, 1-day TTL, never persisted. Reads are public; creating a thread / posting a message needs a login (run Auth first) and a non-finished match (423 once the match is over). The two *.../stream endpoints are Server-Sent Events (text/event-stream) — meant for EventSource; in Postman they stay open and stream, so cancel them manually.",
+      "item": [
+        {
+          "name": "List threads (public)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const b = pm.response.json();", "const t = (b.active && b.active[0]) || (b.latest && b.latest[0]);", "if (t && t.id) pm.collectionVariables.set('threadId', t.id);" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads"] } }
+        },
+        {
+          "name": "Create thread (auth; 423 if match finished)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 423 (locked) or 401', () => pm.expect([200,423,401]).to.include(pm.response.code));", "if (pm.response.code === 200 && pm.response.json().id) pm.collectionVariables.set('threadId', pm.response.json().id);" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"title\": \"What a rally\"\n}" }, "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads"] } }
+        },
+        {
+          "name": "Thread detail ({{threadId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads/{{threadId}}", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads", "{{threadId}}"] } }
+        },
+        {
+          "name": "Post message (auth; 423 if finished)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 423 or 401', () => pm.expect([200,423,401]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"text\": \"Best point of the match\"\n}" }, "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads/{{threadId}}/messages", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads", "{{threadId}}", "messages"] } }
+        },
+        {
+          "name": "SSE — thread list stream (cancel manually)",
+          "request": { "method": "GET", "header": [ { "key": "Accept", "value": "text/event-stream" } ], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads/stream", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads", "stream"] } }
+        },
+        {
+          "name": "SSE — messages stream ({{threadId}}, cancel manually)",
+          "request": { "method": "GET", "header": [ { "key": "Accept", "value": "text/event-stream" } ], "url": { "raw": "{{baseUrl}}/api/matches/{{matchExternalId}}/threads/{{threadId}}/stream", "host": ["{{baseUrl}}"], "path": ["api", "matches", "{{matchExternalId}}", "threads", "{{threadId}}", "stream"] } }
+        }
+      ]
+    },
+    {
+      "name": "Tournaments (Phase 3 + detail)",
+      "description": "Run 'Sync tournaments' (admin) once first; these then serve from cache. Only currently-live tournaments appear. 'Current tournaments' captures the first id into {{tournamentId}} for the detail requests.",
+      "item": [
+        {
+          "name": "Current tournaments",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "const a = pm.response.json();", "if (a[0] && a[0].id) pm.collectionVariables.set('tournamentId', a[0].id);" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/current", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "current"] } }
+        },
+        {
+          "name": "Tournament by id ({{tournamentId}})",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/{{tournamentId}}", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "{{tournamentId}}"] } }
+        },
+        {
+          "name": "Tournament matches (ATP/WTA, importance-sorted)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/{{tournamentId}}/matches", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "{{tournamentId}}", "matches"] } }
+        },
+        {
+          "name": "Tournament chat threads (most active)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/{{tournamentId}}/threads", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "{{tournamentId}}", "threads"] } }
+        },
+        {
+          "name": "Tournament headlines (scraped news)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/{{tournamentId}}/headlines", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "{{tournamentId}}", "headlines"] } }
+        }
+      ]
+    },
+    {
+      "name": "Me — personalization (Phase 4, needs login)",
+      "description": "Run Auth + Rankings first ({{token}} and {{playerId}}).",
+      "item": [
+        {
+          "name": "Home config (GET)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
+        },
+        {
+          "name": "Home config (PUT)",
+          "request": { "method": "PUT", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"widgets\": [\"live-matches\", \"rankings-atp\", \"favorites\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/me/home-config", "host": ["{{baseUrl}}"], "path": ["api", "me", "home-config"] } }
+        },
+        {
+          "name": "Favorites (GET)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
+        },
+        {
+          "name": "Add favorite ({{playerId}})",
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"playerId\": \"{{playerId}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/me/favorites", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites"] } }
+        },
+        {
+          "name": "Remove favorite ({{playerId}})",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/api/me/favorites/{{playerId}}", "host": ["{{baseUrl}}"], "path": ["api", "me", "favorites", "{{playerId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "Admin — polling, reconciliation & enrichment (needs admin login)",
+      "description": "All /api/admin/** require an admin token — run 'Login as admin' first. The poll endpoints call the upstream feed (scheduled polling is on by default, so these are for on-demand refreshes). 'Reconciliation review queue' captures the first row's external id into {{unmappedExternalId}} for the candidate/upstream lookups.",
       "item": [
         {
           "name": "Poll live matches  (⚠ upstream call)",
@@ -166,55 +257,59 @@
           "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/poll/recent", "host": ["{{baseUrl}}"], "path": ["api", "admin", "poll", "recent"] } }
         },
         {
+          "name": "Run enrichment queue (surfaces)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports a summary', () => pm.expect(pm.response.json()).to.have.property('resolved'));", "// resolves tournament surface via curated registry + the get_tournaments catalog; back-fills matches" ] } } ],
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/enrichment/run?limit=50", "host": ["{{baseUrl}}"], "path": ["api", "admin", "enrichment", "run"], "query": [ { "key": "limit", "value": "50" } ] } }
+        },
+        {
           "name": "Reconciliation review queue",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "const r = pm.response.json()[0];", "if (r && (r.externalPlayerId || r.externalId)) pm.collectionVariables.set('unmappedExternalId', r.externalPlayerId || r.externalId);" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities?limit=100", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities"], "query": [ { "key": "limit", "value": "100" } ] } }
         },
         {
+          "name": "Candidate canonical players (for a queue row)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));", "// the same surname candidate set the cascade + admin UI use" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities/candidates?source=api-tennis&externalPlayerId={{unmappedExternalId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities", "candidates"], "query": [ { "key": "source", "value": "api-tennis" }, { "key": "externalPlayerId", "value": "{{unmappedExternalId}}" } ] } }
+        },
+        {
+          "name": "Upstream recent results (⚠ upstream call)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "// the upstream player's recent matches by player_key — the strongest 'is this them?' disambiguation signal" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities/upstream-matches?source=api-tennis&externalPlayerId={{unmappedExternalId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities", "upstream-matches"], "query": [ { "key": "source", "value": "api-tennis" }, { "key": "externalPlayerId", "value": "{{unmappedExternalId}}" } ] } }
+        },
+        {
+          "name": "Upstream player profile (⚠ upstream call)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "// country / birth year / rank, fetched live + persisted onto the queue row" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/unmapped-entities/upstream-profile?source=api-tennis&externalPlayerId={{unmappedExternalId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "unmapped-entities", "upstream-profile"], "query": [ { "key": "source", "value": "api-tennis" }, { "key": "externalPlayerId", "value": "{{unmappedExternalId}}" } ] } }
+        },
+        {
           "name": "Confirm a mapping (manual)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "// EDIT the body first: externalPlayerId from the review queue, playerId = the correct Sackmann id" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "// EDIT first: externalPlayerId from the review queue, playerId = the chosen canonical UUID" ] } } ],
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
-            "body": { "mode": "raw", "raw": "{\n  \"source\": \"api-tennis\",\n  \"externalPlayerId\": \"REPLACE_WITH_EXTERNAL_ID\",\n  \"playerId\": 0\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"source\": \"api-tennis\",\n  \"externalPlayerId\": \"{{unmappedExternalId}}\",\n  \"playerId\": \"{{playerId}}\"\n}" },
             "url": { "raw": "{{baseUrl}}/api/admin/entity-map", "host": ["{{baseUrl}}"], "path": ["api", "admin", "entity-map"] }
           }
         },
         {
-          "name": "Run Tier-3 reconciliation (admin, ⚠ calls Anthropic Haiku)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports a summary', () => pm.expect(pm.response.json()).to.have.property('examined'));", "// offline LLM pass over the review queue; returns zeros unless app.llm is enabled + keyed" ] } } ],
+          "name": "Run Tier-3 reconciliation (⚠ calls Anthropic Haiku)",
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports a summary', () => pm.expect(pm.response.json()).to.have.property('examined'));", "// offline LLM pass over the review queue; returns zeros unless app.llm + app.reconcile.tier3 are enabled + keyed" ] } } ],
           "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/reconcile/tier3?limit=50", "host": ["{{baseUrl}}"], "path": ["api", "admin", "reconcile", "tier3"], "query": [ { "key": "limit", "value": "50" } ] } }
         }
       ]
     },
     {
-      "name": "Tournaments (Phase 3)",
-      "description": "Run 'Sync tournaments' (admin) once first; these then serve from cache. Only currently-live tournaments appear.",
-      "item": [
-        {
-          "name": "Current tournaments",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('is array', () => pm.expect(pm.response.json()).to.be.an('array'));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/current", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "current"] } }
-        },
-        {
-          "name": "Tournament by id (id=1)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200 or 404', () => pm.expect([200,404]).to.include(pm.response.code));", "// swap the id for one returned by /current" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/tournaments/1", "host": ["{{baseUrl}}"], "path": ["api", "tournaments", "1"] } }
-        }
-      ]
-    },
-    {
-      "name": "Insights — weekly AI digest (Phase 6a)",
-      "description": "Admin generates a DRAFT (calls Anthropic, grounded in DB facts), reviews it, then publishes. The public endpoints serve only PUBLISHED insights. Generation needs current data — run the rankings/recent/tournaments polls first if the DB is empty. 'Generate' saves the new id to {{insightId}} for the publish/by-id requests.",
+      "name": "Insights — weekly AI digest (Phase 6a/6b)",
+      "description": "Admin generates a DRAFT (calls Anthropic, grounded in DB facts + cited scraped news), then a fact-check auto-publishes it if clean — else it stays DRAFT and you publish manually. The public endpoints serve only PUBLISHED insights. Generation needs current data — run the rankings/recent/tournaments polls first if the DB is empty. 'Generate' saves the new id to {{insightId}}.",
       "item": [
         {
           "name": "Preview news feed (admin, no LLM call)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports a count', () => pm.expect(pm.response.json()).to.have.property('count'));", "// debug the RSS half before generating: count=0 with feeds listed = a feed is unreachable/non-XML" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "pm.test('reports a count', () => pm.expect(pm.response.json()).to.have.property('count'));", "// debug the scraper before generating: count=0 with sites listed = a site is unreachable" ] } } ],
           "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/news/preview?days=8&limit=10", "host": ["{{baseUrl}}"], "path": ["api", "admin", "news", "preview"], "query": [ { "key": "days", "value": "8" }, { "key": "limit", "value": "10" } ] } }
         },
         {
           "name": "Generate digest (admin, ⚠ calls Anthropic)",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const id = pm.response.json().draftId;", "if (id) { pm.collectionVariables.set('insightId', id); }", "pm.test('returned a draftId (null = skipped: no data to ground on)', () => pm.expect(pm.response.json()).to.have.property('draftId'));" ] } } ],
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('200', () => pm.response.to.have.status(200));", "const id = pm.response.json().draftId;", "if (id) { pm.collectionVariables.set('insightId', id); }", "pm.test('returned a draftId (null = skipped: no data/news to ground on)', () => pm.expect(pm.response.json()).to.have.property('draftId'));" ] } } ],
           "request": { "method": "POST", "header": [], "url": { "raw": "{{baseUrl}}/api/admin/insights/generate", "host": ["{{baseUrl}}"], "path": ["api", "admin", "insights", "generate"] } }
         },
         {
@@ -244,8 +339,8 @@
       "item": [
         {
           "name": "Unknown player -> 404",
-          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('404', () => pm.response.to.have.status(404));" ] } } ],
-          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/999999999", "host": ["{{baseUrl}}"], "path": ["api", "players", "999999999"] } }
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('404', () => pm.response.to.have.status(404));", "// a valid-format UUID that doesn't exist (a non-UUID string would 400 on the path binding instead)" ] } } ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/players/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "players", "00000000-0000-0000-0000-000000000000"] } }
         }
       ]
     }

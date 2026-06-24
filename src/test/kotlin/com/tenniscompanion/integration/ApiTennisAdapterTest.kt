@@ -248,6 +248,59 @@ class ApiTennisAdapterTest {
     }
 
     @Test
+    fun `toGame drops the redundant tiebreak detail so it is not counted as an extra set`() {
+        // the deciding game of a tiebreak set IS a real game and is kept ("Set 2" game 13 = "7-6")
+        val decider = adapter.toGame(
+            PbpGameDto(setNumber = "Set 2", numberGame = "13", playerServed = "First Player", serveWinner = "First Player", score = "7 - 6"),
+        )
+        assertEquals(2, decider!!.setNumber)
+        // the separate "Set 2 TieBreak" point list is redundant detail — dropped (else it parses to set 1)
+        assertNull(adapter.toGame(
+            PbpGameDto(setNumber = "Set 2 TieBreak", numberGame = "12", playerServed = "First Player", serveWinner = "First Player", score = "7 - 5"),
+        ))
+    }
+
+    @Test
+    fun `isTiebreakDetail matches the feed's tiebreak label variants only`() {
+        assertTrue(adapter.isTiebreakDetail("Set 2 TieBreak"))
+        assertTrue(adapter.isTiebreakDetail("Set 3 Tie Break"))
+        assertTrue(adapter.isTiebreakDetail("Set 1 Tie-Break"))
+        assertFalse(adapter.isTiebreakDetail("Set 2"))
+        assertFalse(adapter.isTiebreakDetail(null))
+    }
+
+    @Test
+    fun `setNoOf parses the set number from plain and tiebreak labels`() {
+        assertEquals(2, adapter.setNoOf("Set 2"))
+        assertEquals(2, adapter.setNoOf("Set 2 TieBreak"))
+        assertEquals(3, adapter.setNoOf("Set 3 Tie Break"))
+        assertNull(adapter.setNoOf(null))
+    }
+
+    @Test
+    fun `assembleGames folds out-of-order tiebreak points into the set's deciding game`() {
+        // "Set 2" reaches 6-6 (g12), the tiebreak is its deciding game (g13 = "6-7"), and the per-point
+        // "Set 2 TieBreak" rows arrive OUT OF ORDER and interleaved with g13 — mirroring the real feed.
+        val pbp = listOf(
+            PbpGameDto(setNumber = "Set 1", numberGame = "1", playerServed = "First Player", serveWinner = "First Player", score = "1 - 0"),
+            PbpGameDto(setNumber = "Set 2", numberGame = "12", playerServed = "First Player", serveWinner = "First Player", score = "6 - 6"),
+            PbpGameDto(setNumber = "Set 2 TieBreak", numberGame = "1", playerServed = "Second Player", serveWinner = "Second Player", score = "0 - 1"),
+            PbpGameDto(setNumber = "Set 2 TieBreak", numberGame = "3", playerServed = "First Player", serveWinner = "First Player", score = "1 - 2"),
+            PbpGameDto(setNumber = "Set 2", numberGame = "13", playerServed = "Second Player", serveWinner = "Second Player", score = "6 - 7"),
+            PbpGameDto(setNumber = "Set 2 TieBreak", numberGame = "2", playerServed = "First Player", serveWinner = "Second Player", score = "0 - 2"),
+        )
+        val games = adapter.assembleGames(pbp)
+        // only the real games survive — the tiebreak detail does NOT become its own (phantom) set
+        assertEquals(listOf(1, 2, 2), games.map { it.setNumber })
+        val tb = games.last() // Set 2 game 13, the tiebreak game
+        assertEquals(13, tb.gameInSet)
+        assertEquals(2, tb.winnerSide)
+        // its points are the tiebreak points, sorted by point number, winners from serve_winner
+        assertEquals(listOf("0-1", "0-2", "1-2"), tb.points.map { it.label })
+        assertEquals(listOf(2, 2, 1), tb.points.map { it.winnerSide })
+    }
+
+    @Test
     fun `maps a standing to a ranking with IOC country`() {
         val r = adapter.toRanking(
             StandingDto(place = "1", player = "Iga Swiatek", playerKey = "1910", league = "WTA", country = "Poland", points = "8501"),

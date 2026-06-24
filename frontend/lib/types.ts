@@ -109,6 +109,7 @@ export interface MomentumPoint {
   sets: string; // completed-set games, e.g. "6-3"
   games: string; // current-set games "4-3"
   points: string; // in-game point score "30-15" ("" on a game-ending sample)
+  server: number; // who is serving this game: 1 | 2 (0 on the origin sample)
 }
 export interface MomentumBreak {
   x: number;

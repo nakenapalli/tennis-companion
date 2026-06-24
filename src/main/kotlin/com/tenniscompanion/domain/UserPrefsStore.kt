@@ -7,14 +7,20 @@ import java.util.UUID
 
 data class FavoriteDto(val playerId: UUID, val firstName: String?, val lastName: String?, val tour: String?)
 
-/** Home-screen config (JSONB) + favorites for a user. Plain JDBC. */
+/**
+ * The authenticated user's personalization — home-screen widget layout (an opaque JSONB blob) and the
+ * favorite-players list. Plain JDBC (no JPA) since both are simple key/value-ish reads. `userId` is the
+ * BIGINT `users.id`; favorites reference the canonical `players.id` UUID.
+ */
 @Repository
 class UserPrefsStore(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) {
 
+    // Served when a user has never customized their home — the default widget set + order.
     private val defaultLayout: Map<String, Any?> = mapOf(
         "widgets" to listOf("recent-results", "live-matches", "rankings-atp", "favorites", "latest-digest"),
     )
 
+    /** The user's saved layout, or [defaultLayout] if they've never saved one. */
     @Suppress("UNCHECKED_CAST")
     fun homeConfig(userId: Long): Map<String, Any?> {
         val json = jdbc.query(
@@ -31,6 +37,7 @@ class UserPrefsStore(private val jdbc: JdbcTemplate, private val mapper: ObjectM
         )
     }
 
+    /** Favorites joined to the player row for display names; LEFT JOIN so a stale favorite still returns. */
     fun favorites(userId: Long): List<FavoriteDto> = jdbc.query(
         """
         SELECT f.player_id, p.first_name, p.last_name, p.tour

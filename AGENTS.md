@@ -105,8 +105,8 @@ sits just above OS env vars so values resolve reliably, below command-line args)
   player logo. The upstream **player keys** needed for those live lookups come from the same
   `get_fixtures&match_key` fixture (kept on `NormalizedMatchDetail`), so no schema change was needed. Both
   responses are Redis-cached (status-based TTL); **Overview** is frontend-only (match facts from the existing
-  detail + a one-line H2H summary). Note the `matchdetail` cache key is **versioned** (`matchdetail:v2:…`) —
-  bump it whenever `NormalizedMatchDetail`'s shape changes so stale Redis entries are ignored.
+  detail + a one-line H2H summary). Note the `matchdetail` cache key is **versioned** (`matchdetail:v5:…`) —
+  bump it whenever `NormalizedMatchDetail`'s shape OR the way it's parsed changes, so stale Redis entries are ignored.
 - **Reconciliation never blocks serving:** unmapped players fall back to the upstream display name; the hard
   residue goes to a human-review queue. The offline **Tier-3** LLM pass (`Tier3ReconciliationJob`) classifies
   that queue against a rebuilt candidate set — scheduled (default daily 07:00 UTC, `app.reconcile.tier3-cron`)

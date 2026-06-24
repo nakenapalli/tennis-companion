@@ -33,7 +33,10 @@ class MatchDetailService(
         val m = liveData.matchDetail(adapter.source, externalId) ?: return null
         val detail = detail(externalId, m.status) ?: return null
         if (detail.games.isEmpty()) return null
-        val result = MomentumCalculator.compute(detail.games, bestOf(m.category, m.tour))
+        // ranks feed the leverage model's skill prior (how the remaining sets are likely to split)
+        val rank1 = m.player1.playerId?.let { playerService.profile(it)?.currentRank }
+        val rank2 = m.player2.playerId?.let { playerService.profile(it)?.currentRank }
+        val result = MomentumCalculator.compute(detail.games, bestOf(m.category, m.tour), rank1, rank2)
         return MomentumDto(
             bestOf = bestOf(m.category, m.tour),
             player1 = m.player1.name,
@@ -135,7 +138,7 @@ class MatchDetailService(
     /** Cached normalized detail. A null upstream result is cached as a short-lived sentinel so a stats-less
      *  lower-circuit match isn't re-fetched on every request. */
     private fun detail(externalId: String, status: String?): NormalizedMatchDetail? {
-        val key = "matchdetail:v2:${adapter.source}:$externalId" // v2: shape gained player keys
+        val key = "matchdetail:v5:${adapter.source}:$externalId" // v5: tiebreak games flagged + per-point server
         redis.opsForValue().get(key)?.let {
             return if (it == EMPTY) null else mapper.readValue(it, NormalizedMatchDetail::class.java)
         }

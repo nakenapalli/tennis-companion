@@ -10,6 +10,13 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Instant
 
+/**
+ * Pulls the current ATP + WTA singles rankings daily (default 06:00 UTC), reconciles each row to a
+ * canonical player UUID, and upserts into the unified `rankings` table (`source='api-tennis'`) + the
+ * Redis snapshot the API serves. Reconciliation never blocks the write — an unmapped row is still stored
+ * with a null `player_id` and the upstream display name, then resolved later. Also runnable on demand via
+ * the admin trigger and once on boot via [StartupDataSync].
+ */
 @Component
 class RankingsPoller(
     private val adapter: TennisApiAdapter,
@@ -22,6 +29,8 @@ class RankingsPoller(
     @Scheduled(cron = "\${POLL_RANKINGS_CRON:0 0 6 * * *}")
     fun scheduled() {
         if (!props.enabled) return
+        // Resilience: swallow upstream failures here so a bad refresh keeps the last-good snapshot rather
+        // than crashing the schedule. The on-demand admin trigger calls poll() directly and DOES surface errors.
         runCatching { poll() }.onFailure { log.warn("Rankings poll skipped (upstream error): {}", it.message) }
     }
 

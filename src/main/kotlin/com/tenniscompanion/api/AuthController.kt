@@ -14,8 +14,14 @@ import java.time.Instant
 
 data class RegisterRequest(val email: String, val username: String, val password: String)
 data class LoginRequest(val email: String, val password: String)
+/** `token` is the JWT the client sends as `Authorization: Bearer …` on every authenticated call. */
 data class AuthResponse(val token: String, val email: String, val username: String?, val admin: Boolean)
 
+/**
+ * Registration + login. Auth is stateless: both endpoints return a signed JWT (see [JwtService]) rather
+ * than setting a session. `username` is the public handle shown on chat messages — unique, case-insensitive,
+ * and validated against [USERNAME_RE]. Email is normalized (trim + lowercase) so it's the stable login key.
+ */
 @RestController
 @RequestMapping("/api/auth")
 class AuthController(
