@@ -24,11 +24,11 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
-.container { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; }
+.container { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
 
 /* nav */
 .nav { border-bottom: 1px solid var(--line); background: rgba(14, 17, 22, 0.85); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 10; }
-.nav-inner { max-width: 1040px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 24px; }
+.nav-inner { max-width: 1280px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 24px; }
 .brand { font-weight: 700; letter-spacing: -0.01em; }
 .nav-links { display: flex; gap: 18px; flex: 1; font-size: 14px; }
 .nav-links a { color: var(--muted); }
@@ -93,7 +93,7 @@ tr:hover td { background: var(--panel); }
 .tag-qual { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: var(--accent); border-color: var(--accent); }
 .pill { color: var(--accent); font-weight: 700; }
 .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 36px; text-align: center; color: var(--muted); }
-.attribution { max-width: 1040px; margin: 0 auto; padding: 18px 20px 40px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+.attribution { max-width: 1280px; margin: 0 auto; padding: 18px 20px 40px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
 .spinner { color: var(--muted); padding: 24px 0; }
 .player-link:hover { color: var(--accent); }
 .fav-btn { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--gold); cursor: pointer; padding: 6px 12px; font-size: 13px; }
@@ -116,8 +116,8 @@ tr:hover td { background: var(--panel); }
 .digest-sources a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .digest-sources a:hover { color: var(--text); }
 
-/* home: scores (left) | latest digest (right), stacking on narrow screens */
-.home-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 100px; align-items: start; }
+/* home: scores (left, two tour columns) | latest digest (right), stacking on narrow screens */
+.home-split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 40px; align-items: start; }
 @media (max-width: 760px) { .home-split { grid-template-columns: 1fr; } }
 .rankings-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
 @media (max-width: 760px) { .rankings-split { grid-template-columns: 1fr; } }
@@ -152,6 +152,20 @@ tr:hover td { background: var(--panel); }
 
 /* /scores grouped by tournament */
 .tourney-group { margin-bottom: 18px; }
+
+/* ATP/WTA sub-sections within a tournament (scores + tournament pages): small header, 6-card cap, "See more" */
+.tour-section + .tour-section { margin-top: 10px; }
+.tour-subhead { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 16px 0 8px; }
+.see-more-row { margin: 10px 0 2px; }
+
+/* home dashboard: ATP | WTA side by side, each a single column of cards (stacking on narrow screens) */
+.scores-tour-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .scores-tour-cols { grid-template-columns: 1fr; } }
+.grid-1col { grid-template-columns: 1fr; }
+
+/* home scores: prominent "Recent Matches"/"Live now" title + larger ATP/WTA section headers */
+.home-scores-title { font-size: 22px; font-weight: 700; text-transform: none; letter-spacing: -0.01em; color: var(--text); margin: 4px 0 16px; }
+.scores-tour-cols .tour-subhead { font-size: 16px; color: var(--text); }
 
 /* clickable score cards (navigate to the match view) */
 .card-clickable { cursor: pointer; }

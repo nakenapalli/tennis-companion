@@ -7,7 +7,7 @@ export default function ScoresPage() {
     <div>
       <h1>Scores</h1>
       <p className="sub">Live matches when play is on, otherwise recently completed matches — grouped by tournament.</p>
-      <ScoresFeed groupByTournament />
+      <ScoresFeed groupByTournament back={{ label: "Scores", href: "/scores" }} />
     </div>
   );
 }

@@ -30,7 +30,10 @@ export default function MatchPage() {
 
   return (
     <div>
-      <Link href="/scores" className="player-link">← Scores</Link>
+      {/* useSearchParams must sit under a Suspense boundary for the production build to prerender. */}
+      <Suspense fallback={<Link href="/scores" className="player-link">← Scores</Link>}>
+        <BackLink />
+      </Suspense>
       {isLoading ? (
         <div className="spinner">Loading…</div>
       ) : error || !data ? (
@@ -46,6 +49,23 @@ export default function MatchPage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Dynamic back button: returns to wherever the user came from (Scores / a tournament / a filtered
+ * tournament), carried in the `b` (href) + `bl` (label) params by `matchHref`. Defaults to Scores. The
+ * href is only honored if it's an internal path, so a crafted param can't turn this into an open redirect.
+ */
+function BackLink() {
+  const sp = useSearchParams();
+  const raw = sp.get("b");
+  const href = raw && raw.startsWith("/") ? raw : "/scores";
+  const label = sp.get("bl") || "Scores";
+  return (
+    <Link href={href} className="player-link">
+      ← {label}
+    </Link>
   );
 }
 

@@ -45,17 +45,14 @@ export default function HomePage() {
   // is published, so the home gracefully falls back to scores + rankings with no insight.
   const insight = useSWR<Insight | undefined>("/api/insights/latest?type=weekly_digest", fetcher);
 
-  const scores = <ScoresFeed limit={4} moreHref="/scores" />;
   const digest = insight.data?.bodyMarkdown ? extractSources(insight.data.bodyMarkdown) : null;
+
+  const scores = <ScoresFeed tourColumns moreHref="/scores" back={{ label: "Home", href: "/" }} />;
 
   return (
     <div>
-      {/* <h1>Welcome</h1>
-      <p className="sub">What you missed and what&apos;s worth watching.</p> */}
-
-      
-
-      {/* Scores left, latest digest right. With no published digest, scores span the full width. */}
+      {/* Scores (ATP/WTA columns) on the left, latest digest on the right. With no published digest, the
+          scores span the full width. The top-5 lists follow underneath. */}
       {insight.data ? (
         <div className="home-split">
           <div>{scores}</div>
@@ -82,7 +79,7 @@ export default function HomePage() {
         scores
       )}
 
-      <div className="rankings-split">
+      <div className="rankings-split" style={{ marginTop: 36 }}>
         <Top5 title="ATP top 5" tour="ATP" rows={atp.data} />
         <Top5 title="WTA top 5" tour="WTA" rows={wta.data} />
       </div>

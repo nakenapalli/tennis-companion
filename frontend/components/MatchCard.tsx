@@ -6,27 +6,30 @@ import type { LiveMatch, PlayerSide, SideScore } from "@/lib/types";
 import { Flag } from "@/components/Flag";
 import { TierBadge } from "@/components/TierBadge";
 import { roundSuffix, setWinners } from "@/lib/score";
+import { matchHref, type BackContext } from "@/lib/matchHref";
 
 /**
  * `grouped` = rendered under a per-tournament section on /scores: the tournament name + tier badge live in
  * the section header, so the card shows only status + round. The whole card navigates to the match view;
- * inner player links stop propagation so they still go to the player page.
+ * inner player links stop propagation so they still go to the player page. `back` records where the user
+ * came from so the match view's back button can return there.
  */
-export function MatchCard({ m, grouped = false }: { m: LiveMatch; grouped?: boolean }) {
+export function MatchCard({ m, grouped = false, back }: { m: LiveMatch; grouped?: boolean; back?: BackContext }) {
   const router = useRouter();
   const live = m.status === "live";
   const serve = live ? m.serve : undefined; // "home" | "away"
   const round = roundSuffix(m.round);
   const roundLabel = m.qualifying ? (round ? `Qualifying - ${round}` : "Qualifying") : round;
   const winners = setWinners(m.score, live);
+  const href = matchHref(m.externalId, back);
   return (
     <article
       className="card card-link card-clickable"
       role="link"
       tabIndex={0}
-      onClick={() => router.push(`/matches/${m.externalId}`)}
+      onClick={() => router.push(href)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") router.push(`/matches/${m.externalId}`);
+        if (e.key === "Enter") router.push(href);
       }}
     >
       <div className="match-top">
